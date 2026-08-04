@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from time import perf_counter
 from typing import Any
 
 import httpx
 
 from app.domain.models import RewriteChange, RewriteRequest
-from app.providers.base import RewriteProviderResult
+from app.providers.base import ProviderUsage, RewriteProviderResult
 from app.providers.exceptions import (
     RewriteProviderConfigurationError,
     RewriteProviderResponseError,
@@ -58,6 +59,8 @@ class CloudflareWorkersAIProvider:
         return "cloudflare-workers-ai"
 
     def rewrite(self, request: RewriteRequest) -> RewriteProviderResult:
+        started_at = perf_counter()
+
         endpoint = (
             "https://api.cloudflare.com/client/v4/accounts/"
             f"{self._account_id}/ai/run/{self._model_name}"
@@ -120,6 +123,7 @@ class CloudflareWorkersAIProvider:
 
         generated_output = _extract_generated_output(response_body)
         rewritten_text = _parse_rewritten_text(generated_output)
+        usage = _extract_usage(response_body)
 
         changes: list[RewriteChange] = []
 
@@ -143,6 +147,11 @@ class CloudflareWorkersAIProvider:
             provider_name=self.provider_name,
             model_name=self._model_name,
             prompt_version="cloudflare-humanize-v2",
+            latency_ms=round((perf_counter() - started_at) * 1000, 3),
+            primary_provider_name=self.provider_name,
+            fallback_used=False,
+            provider_error_category=None,
+            usage=usage,
         )
 
     @staticmethod
@@ -171,6 +180,45 @@ class CloudflareWorkersAIProvider:
             "Source text:\n"
             f"{request.text}"
         )
+
+
+def _extract_usage(response_body: dict[str, Any]) -> ProviderUsage:
+    result = response_body.get("result")
+
+    if not isinstance(result, dict):
+        return ProviderUsage()
+
+    usage = result.get("usage")
+
+    if not isinstance(usage, dict):
+        return ProviderUsage()
+
+    input_tokens = _optional_non_negative_integer(
+        usage.get("input_tokens", usage.get("prompt_tokens"))
+    )
+    output_tokens = _optional_non_negative_integer(
+        usage.get("output_tokens", usage.get("completion_tokens"))
+    )
+    total_tokens = _optional_non_negative_integer(usage.get("total_tokens"))
+
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+
+    return ProviderUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def _optional_non_negative_integer(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, int) and value >= 0:
+        return value
+
+    return None
 
 
 def _parse_json_object(response: httpx.Response) -> dict[str, Any]:

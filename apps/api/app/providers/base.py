@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from app.domain.models import RewriteChange, RewriteRequest
+
+
+@dataclass(frozen=True)
+class ProviderUsage:
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -13,6 +20,11 @@ class RewriteProviderResult:
     provider_name: str
     model_name: str
     prompt_version: str
+    latency_ms: float = 0.0
+    primary_provider_name: str = ""
+    fallback_used: bool = False
+    provider_error_category: str | None = None
+    usage: ProviderUsage = field(default_factory=ProviderUsage)
 
 
 @runtime_checkable

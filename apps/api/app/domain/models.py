@@ -94,13 +94,30 @@ class VerificationResult(BaseModel):
     warnings: list[str]
 
 
+class ProviderUsageEvidence(BaseModel):
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+
+
+class ProviderExecutionEvidence(BaseModel):
+    latency_ms: float = Field(ge=0.0)
+    primary_provider_name: str
+    actual_provider_name: str
+    fallback_used: bool
+    provider_error_category: str | None
+    usage: ProviderUsageEvidence
+
+
 class RewriteResponse(BaseModel):
+    trace_id: str
     workflow_states: list[WorkflowState]
     source_text: str
     rewritten_text: str
     provider_name: str
     model_name: str
     prompt_version: str
+    provider_execution: ProviderExecutionEvidence
     analysis: AnalysisResult
     protected_facts: list[ProtectedFact]
     changes: list[RewriteChange]

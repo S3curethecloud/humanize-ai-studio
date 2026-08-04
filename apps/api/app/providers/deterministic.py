@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
+from time import perf_counter
 
 from app.domain.models import RewriteChange, RewriteRequest
-from app.providers.base import RewriteProviderResult
+from app.providers.base import ProviderUsage, RewriteProviderResult
 
 REPLACEMENTS = (
     (
@@ -51,6 +52,7 @@ class DeterministicRewriteProvider:
         return "deterministic"
 
     def rewrite(self, request: RewriteRequest) -> RewriteProviderResult:
+        started_at = perf_counter()
         rewritten = request.text
         changes: list[RewriteChange] = []
 
@@ -89,4 +91,13 @@ class DeterministicRewriteProvider:
             provider_name=self.provider_name,
             model_name="rules-v1",
             prompt_version="deterministic-rewrite-v1",
+            latency_ms=round((perf_counter() - started_at) * 1000, 3),
+            primary_provider_name=self.provider_name,
+            fallback_used=False,
+            provider_error_category=None,
+            usage=ProviderUsage(
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+            ),
         )

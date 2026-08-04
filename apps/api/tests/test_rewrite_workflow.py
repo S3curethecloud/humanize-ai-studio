@@ -25,9 +25,15 @@ def test_rewrite_removes_formulaic_language_and_preserves_number() -> None:
     body = response.json()
 
     assert body["rewritten_text"] == "The team completed the project in 30 days."
+    assert body["trace_id"].startswith("rewrite_")
     assert body["provider_name"] == "deterministic"
     assert body["model_name"] == "rules-v1"
     assert body["prompt_version"] == "deterministic-rewrite-v1"
+    assert body["provider_execution"]["primary_provider_name"] == "deterministic"
+    assert body["provider_execution"]["actual_provider_name"] == "deterministic"
+    assert body["provider_execution"]["fallback_used"] is False
+    assert body["provider_execution"]["provider_error_category"] is None
+    assert body["provider_execution"]["latency_ms"] >= 0
     assert body["verification"]["decision"] == "pass"
     assert body["verification"]["missing_facts"] == []
     assert body["workflow_states"][-1] == "ready_for_review"
