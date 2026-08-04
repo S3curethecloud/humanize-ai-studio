@@ -9,6 +9,8 @@ from app.domain.models import (
     ProviderUsageEvidence,
     ReleaseDecision,
     RewriteChange,
+    RewriteNecessityEvidence,
+    RewriteNecessitySignalEvidence,
     RewriteRequest,
     RewriteResponse,
     WorkflowState,
@@ -143,11 +145,32 @@ class RewriteWorkflow:
                     total_tokens=rewrite_result.usage.total_tokens,
                 ),
             ),
+            rewrite_necessity=self._build_necessity_evidence(necessity),
             analysis=analysis,
             editorial_quality=editorial_quality,
             protected_facts=protected_facts,
             changes=rewrite_result.changes,
             verification=verification,
+        )
+
+    def _build_necessity_evidence(
+        self,
+        necessity: RewriteNecessityResult,
+    ) -> RewriteNecessityEvidence:
+        return RewriteNecessityEvidence(
+            decision=necessity.decision.value,
+            score=necessity.score,
+            provider_required=necessity.provider_required,
+            signals=[
+                RewriteNecessitySignalEvidence(
+                    signal_type=signal.signal_type.value,
+                    description=signal.description,
+                    score=signal.score,
+                    evidence=signal.evidence,
+                )
+                for signal in necessity.signals
+            ],
+            rationale=necessity.rationale,
         )
 
     def _resolve_rewrite_result(

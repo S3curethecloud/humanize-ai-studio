@@ -124,6 +124,31 @@ class ProviderExecutionEvidence(BaseModel):
     usage: ProviderUsageEvidence
 
 
+class RewriteNecessitySignalEvidence(BaseModel):
+    signal_type: Literal[
+        "formulaic_language",
+        "repetition",
+        "verbosity",
+        "intensity_request",
+        "already_clear",
+    ]
+    description: str
+    score: int = Field(ge=0, le=100)
+    evidence: list[str]
+
+
+class RewriteNecessityEvidence(BaseModel):
+    decision: Literal[
+        "no_change",
+        "minimal_edit",
+        "full_rewrite",
+    ]
+    score: int = Field(ge=0, le=100)
+    provider_required: bool
+    signals: list[RewriteNecessitySignalEvidence]
+    rationale: str
+
+
 class RewriteResponse(BaseModel):
     trace_id: str
     workflow_states: list[WorkflowState]
@@ -133,6 +158,7 @@ class RewriteResponse(BaseModel):
     model_name: str
     prompt_version: str
     provider_execution: ProviderExecutionEvidence
+    rewrite_necessity: RewriteNecessityEvidence
     analysis: AnalysisResult
     editorial_quality: EditorialQualityResult
     protected_facts: list[ProtectedFact]
