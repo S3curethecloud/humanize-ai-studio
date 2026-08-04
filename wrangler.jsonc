@@ -7,6 +7,20 @@
 
   "workers_dev": true,
 
+  "secrets": {
+    "required": [
+      "CLOUDFLARE_API_TOKEN"
+    ]
+  },
+
+  "vars": {
+    "HUMANIZE_REWRITE_PROVIDER": "cloudflare",
+    "CLOUDFLARE_ACCOUNT_ID": "15405b0703a8372dfa942f9e685a2903",
+    "CLOUDFLARE_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "CLOUDFLARE_AI_TIMEOUT_SECONDS": "30",
+    "CLOUDFLARE_AI_FALLBACK_ENABLED": "true"
+  },
+
   "routes": [
     {
       "pattern": "humanize.securethecloud.dev",

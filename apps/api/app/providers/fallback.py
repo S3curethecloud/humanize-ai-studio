@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from time import perf_counter
 
@@ -11,6 +12,8 @@ from app.providers.exceptions import (
     RewriteProviderResponseError,
     RewriteProviderTransportError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class FallbackRewriteProvider:
@@ -33,6 +36,16 @@ class FallbackRewriteProvider:
         try:
             return self._primary.rewrite(request)
         except RewriteProviderError as exc:
+            logger.warning(
+                "rewrite_provider_fallback",
+                extra={
+                    "primary_provider": self._primary.provider_name,
+                    "fallback_provider": self._fallback.provider_name,
+                    "provider_error_category": _classify_provider_error(exc),
+                    "provider_error_detail": str(exc),
+                },
+            )
+
             fallback_result = self._fallback.rewrite(request)
 
             return replace(
