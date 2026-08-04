@@ -27,7 +27,7 @@ TRANSITIONS = (
 
 class PatternAnalyzer:
     def analyze(self, text: str) -> AnalysisResult:
-        lowered = text.lower()
+        lowered = text.lower().replace("\u2018", "'").replace("\u2019", "'")
         flagged: list[FlaggedSegment] = []
 
         for phrase in GENERIC_PHRASES:

@@ -94,6 +94,21 @@ class VerificationResult(BaseModel):
     warnings: list[str]
 
 
+class EditorialQualityDecision(StrEnum):
+    PASS = "pass"
+    REVIEW = "review"
+
+
+class EditorialQualityResult(BaseModel):
+    decision: EditorialQualityDecision
+    naturalness_score: float = Field(ge=0.0, le=1.0)
+    source_flag_count: int = Field(ge=0)
+    remaining_flag_count: int = Field(ge=0)
+    removed_flag_count: int = Field(ge=0)
+    remaining_flagged_segments: list[FlaggedSegment]
+    warnings: list[str]
+
+
 class ProviderUsageEvidence(BaseModel):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
@@ -119,6 +134,7 @@ class RewriteResponse(BaseModel):
     prompt_version: str
     provider_execution: ProviderExecutionEvidence
     analysis: AnalysisResult
+    editorial_quality: EditorialQualityResult
     protected_facts: list[ProtectedFact]
     changes: list[RewriteChange]
     verification: VerificationResult

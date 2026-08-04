@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.domain.models import (
+    EditorialQualityDecision,
     ProviderExecutionEvidence,
     ProviderUsageEvidence,
     ReleaseDecision,
@@ -12,6 +13,7 @@ from app.domain.models import (
 )
 from app.providers.base import RewriteProvider
 from app.providers.deterministic import DeterministicRewriteProvider
+from app.services.editorial_quality import EditorialQualityEvaluator
 from app.services.fact_extractor import FactExtractor
 from app.services.pattern_analyzer import PatternAnalyzer
 from app.services.verifier import RewriteVerifier
@@ -24,11 +26,15 @@ class RewriteWorkflow:
         fact_extractor: FactExtractor | None = None,
         provider: RewriteProvider | None = None,
         verifier: RewriteVerifier | None = None,
+        quality_evaluator: EditorialQualityEvaluator | None = None,
     ) -> None:
         self._analyzer = analyzer or PatternAnalyzer()
         self._fact_extractor = fact_extractor or FactExtractor()
         self._provider = provider or DeterministicRewriteProvider()
         self._verifier = verifier or RewriteVerifier()
+        self._quality_evaluator = quality_evaluator or EditorialQualityEvaluator(
+            analyzer=self._analyzer
+        )
 
     def execute(
         self,
@@ -61,14 +67,23 @@ class RewriteWorkflow:
             rewritten_text=rewrite_result.text,
             protected_facts=protected_facts,
         )
+
+        editorial_quality = self._quality_evaluator.evaluate(
+            source_analysis=analysis,
+            rewritten_text=rewrite_result.text,
+        )
+
         states.append(WorkflowState.OUTPUT_VERIFIED)
 
-        if verification.decision is ReleaseDecision.PASS:
-            states.append(WorkflowState.READY_FOR_REVIEW)
-        elif verification.decision is ReleaseDecision.WARN:
+        if verification.decision is ReleaseDecision.FAIL:
+            states.append(WorkflowState.BLOCKED)
+        elif (
+            verification.decision is ReleaseDecision.WARN
+            or editorial_quality.decision is EditorialQualityDecision.REVIEW
+        ):
             states.append(WorkflowState.REQUIRES_REVIEW)
         else:
-            states.append(WorkflowState.BLOCKED)
+            states.append(WorkflowState.READY_FOR_REVIEW)
 
         primary_provider_name = rewrite_result.primary_provider_name or rewrite_result.provider_name
 
@@ -85,7 +100,7 @@ class RewriteWorkflow:
                 primary_provider_name=primary_provider_name,
                 actual_provider_name=rewrite_result.provider_name,
                 fallback_used=rewrite_result.fallback_used,
-                provider_error_category=rewrite_result.provider_error_category,
+                provider_error_category=(rewrite_result.provider_error_category),
                 usage=ProviderUsageEvidence(
                     input_tokens=rewrite_result.usage.input_tokens,
                     output_tokens=rewrite_result.usage.output_tokens,
@@ -93,6 +108,7 @@ class RewriteWorkflow:
                 ),
             ),
             analysis=analysis,
+            editorial_quality=editorial_quality,
             protected_facts=protected_facts,
             changes=rewrite_result.changes,
             verification=verification,

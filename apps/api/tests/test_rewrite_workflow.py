@@ -35,6 +35,9 @@ def test_rewrite_removes_formulaic_language_and_preserves_number() -> None:
     assert body["provider_execution"]["provider_error_category"] is None
     assert body["provider_execution"]["latency_ms"] >= 0
     assert body["verification"]["decision"] == "pass"
+    assert body["editorial_quality"]["decision"] == "pass"
+    assert body["editorial_quality"]["remaining_flag_count"] == 0
+    assert body["editorial_quality"]["naturalness_score"] >= 0.75
     assert body["verification"]["missing_facts"] == []
     assert body["workflow_states"][-1] == "ready_for_review"
     assert any(fact["value"] == "30" for fact in body["protected_facts"])
