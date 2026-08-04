@@ -144,3 +144,65 @@ def test_minimal_change_rejects_unnecessary_reconstruction() -> None:
         rewrite=("Before executing any tool call, the policy engine evaluates it."),
         assertion=assertion,
     )
+
+
+def test_numeric_assertion_accepts_shared_unit_range() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.NUMERIC_EQUIVALENCE,
+        description="Preserve onboarding measurements.",
+        values=["10 days", "3 days"],
+    )
+
+    assert evaluate(
+        source=("The program reduced onboarding time from 10 days to 3 days."),
+        rewrite=("The program cut onboarding time from 10 to 3 days."),
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_plural_morphology() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve action proposal.",
+        concept_groups=[
+            ["suggest an action", "propose an action"],
+        ],
+    )
+
+    assert evaluate(
+        source="The model can propose an action.",
+        rewrite="The model can suggest actions.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_authorization_morphology() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve authorization boundary.",
+        concept_groups=[
+            ["grant authorization"],
+        ],
+    )
+
+    assert evaluate(
+        source="The model cannot authorize the action.",
+        rewrite="The model does not grant authorization.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_escalation_morphology() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve human escalation.",
+        concept_groups=[
+            ["human escalation", "escalates to humans"],
+        ],
+    )
+
+    assert evaluate(
+        source="The workflow supports human escalation.",
+        rewrite="The workflow escalates to humans when necessary.",
+        assertion=assertion,
+    )

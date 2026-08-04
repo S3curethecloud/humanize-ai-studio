@@ -286,7 +286,11 @@ def _concept_groups_present(
 
     for group in groups:
         group_present = any(
-            normalize_evaluation_text(alternative) in normalized_text for alternative in group
+            _concept_alternative_present(
+                normalized_text=normalized_text,
+                alternative=alternative,
+            )
+            for alternative in group
         )
 
         if not group_present:
@@ -295,6 +299,145 @@ def _concept_groups_present(
     details = ["Missing concept alternatives: " + " | ".join(group) for group in missing_groups]
 
     return not missing_groups, details
+
+
+def _concept_alternative_present(
+    *,
+    normalized_text: str,
+    alternative: str,
+) -> bool:
+    normalized_alternative = normalize_evaluation_text(alternative)
+
+    if normalized_alternative in normalized_text:
+        return True
+
+    text_tokens = _semantic_tokens(normalized_text)
+    alternative_tokens = _semantic_tokens(normalized_alternative)
+
+    if not alternative_tokens:
+        return False
+
+    return _is_ordered_subsequence(
+        expected=alternative_tokens,
+        actual=text_tokens,
+    )
+
+
+def _semantic_tokens(text: str) -> list[str]:
+    tokens = re.findall(r"[a-z0-9]+", text.casefold())
+
+    ignored_tokens = {
+        "a",
+        "an",
+        "the",
+        "to",
+        "of",
+        "for",
+        "and",
+        "or",
+        "but",
+        "it",
+        "is",
+        "are",
+        "be",
+        "by",
+        "with",
+        "when",
+        "then",
+        "can",
+        "may",
+        "does",
+        "do",
+    }
+
+    return [_stem_semantic_token(token) for token in tokens if token not in ignored_tokens]
+
+
+def _stem_semantic_token(token: str) -> str:
+    explicit_stems = {
+        "actions": "action",
+        "authorization": "authorize",
+        "authorizations": "authorize",
+        "authorized": "authorize",
+        "authorizing": "authorize",
+        "authorizes": "authorize",
+        "escalation": "escalate",
+        "escalations": "escalate",
+        "escalated": "escalate",
+        "escalates": "escalate",
+        "escalating": "escalate",
+        "regulations": "regulation",
+        "requirements": "requirement",
+        "creates": "create",
+        "created": "create",
+        "creating": "create",
+        "initiates": "initiate",
+        "initiated": "initiate",
+        "initiating": "initiate",
+        "approvals": "approval",
+        "controls": "control",
+        "prompts": "prompt",
+        "tools": "tool",
+        "calls": "call",
+    }
+
+    explicit = explicit_stems.get(token)
+
+    if explicit is not None:
+        return explicit
+
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+
+    return token
+
+
+def _is_ordered_subsequence(
+    *,
+    expected: list[str],
+    actual: list[str],
+) -> bool:
+    expected_index = 0
+
+    for token in actual:
+        if token != expected[expected_index]:
+            continue
+
+        expected_index += 1
+
+        if expected_index == len(expected):
+            return True
+
+    return False
+
+
+_SHARED_UNIT_RANGE_PATTERN = re.compile(
+    r"\b"
+    r"(?P<first>\d+(?:\.\d+)?)"
+    r"\s*(?:to|through|-)\s*"
+    r"(?P<second>\d+(?:\.\d+)?)"
+    r"\s*"
+    r"(?P<unit>"
+    r"business days|days|seconds|minutes|hours|"
+    r"weeks|months|years"
+    r")"
+    r"\b",
+    re.IGNORECASE,
+)
+
+
+def _expand_shared_unit_ranges(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        first = match.group("first")
+        second = match.group("second")
+        unit = match.group("unit")
+
+        return f"{first} {unit} to {second} {unit}"
+
+    return _SHARED_UNIT_RANGE_PATTERN.sub(replace, text)
 
 
 def _canonicalize_numeric_text(text: str) -> str:
@@ -310,5 +453,6 @@ def _canonicalize_numeric_text(text: str) -> str:
 
     normalized = _P95_PATTERN.sub("p95", normalized)
     normalized = normalized.replace(",", "")
+    normalized = _expand_shared_unit_ranges(normalized)
 
     return normalized
