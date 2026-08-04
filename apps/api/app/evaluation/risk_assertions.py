@@ -58,6 +58,7 @@ _REQUIREMENT_MARKERS = (
     " needs to ",
     " has to ",
     " cannot be exceeded ",
+    " may not be exceeded ",
 )
 
 _P95_PATTERN = re.compile(
@@ -98,6 +99,7 @@ class RiskAssertionEvaluator:
             RiskAssertionType.REQUIREMENT: self._evaluate_requirement,
             RiskAssertionType.CONCEPT_GROUPS: (self._evaluate_concept_groups),
             RiskAssertionType.MINIMAL_CHANGE: (self._evaluate_minimal_change),
+            RiskAssertionType.PERSONAL_OWNERSHIP: (self._evaluate_personal_ownership),
         }[assertion.assertion_type]
 
         passed, details = evaluator(
@@ -244,6 +246,59 @@ class RiskAssertionEvaluator:
             normalized_text=normalized,
             groups=assertion.concept_groups,
         )
+
+    def _evaluate_personal_ownership(
+        self,
+        *,
+        source_text: str,
+        rewritten_text: str,
+        assertion: RiskAssertion,
+    ) -> tuple[bool, list[str]]:
+        del source_text
+
+        normalized = normalize_evaluation_text(rewritten_text)
+
+        ownership_patterns = (
+            re.compile(
+                r"\bi personally\s+"
+                r"(?:handled|defined|designed|implemented|built|led)\b"
+            ),
+            re.compile(
+                r"\bi\s+"
+                r"(?:handled|defined|designed|implemented|built|led)\b"
+                r"[^.!?]{0,120}\bmyself\b"
+            ),
+            re.compile(
+                r"\bi myself\s+"
+                r"(?:handled|defined|designed|implemented|built|led)\b"
+            ),
+            re.compile(r"\bi did not delegate\b"),
+            re.compile(
+                r"\bi directly\s+"
+                r"(?:handled|defined|designed|implemented|built|led)\b"
+            ),
+            re.compile(r"\bi owned\b"),
+            re.compile(
+                r"\bi was responsible for\s+"
+                r"(?:designing|defining|implementing|building|leading)\b"
+            ),
+        )
+
+        has_personal_ownership = any(pattern.search(normalized) for pattern in ownership_patterns)
+
+        concepts_pass, concept_details = _concept_groups_present(
+            normalized_text=normalized,
+            groups=assertion.concept_groups,
+        )
+
+        details: list[str] = []
+
+        if not has_personal_ownership:
+            details.append("No direct personal-ownership marker remained.")
+
+        details.extend(concept_details)
+
+        return has_personal_ownership and concepts_pass, details
 
     def _evaluate_minimal_change(
         self,

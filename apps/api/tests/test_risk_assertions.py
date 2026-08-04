@@ -206,3 +206,366 @@ def test_concept_matching_accepts_escalation_morphology() -> None:
         rewrite="The workflow escalates to humans when necessary.",
         assertion=assertion,
     )
+
+
+def test_personal_ownership_accepts_personally_handled() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.PERSONAL_OWNERSHIP,
+        description="Preserve direct personal ownership.",
+        concept_groups=[
+            ["security design"],
+            ["identity"],
+            ["policy"],
+            ["audit boundaries"],
+        ],
+    )
+
+    assert evaluate(
+        source=(
+            "I personally handled the security design, "
+            "including identity, policy, and audit boundaries."
+        ),
+        rewrite=(
+            "I personally handled the security design, "
+            "defining the identity, policy, and audit boundaries."
+        ),
+        assertion=assertion,
+    )
+
+
+def test_personal_ownership_accepts_myself_marker() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.PERSONAL_OWNERSHIP,
+        description="Preserve direct personal ownership.",
+        concept_groups=[
+            ["security design"],
+            ["identity"],
+            ["policy"],
+            ["audit boundaries"],
+        ],
+    )
+
+    assert evaluate(
+        source=(
+            "I personally handled the security design, "
+            "including identity, policy, and audit boundaries."
+        ),
+        rewrite=(
+            "I handled the security design myself, defining "
+            "the identity, policy, and audit boundaries."
+        ),
+        assertion=assertion,
+    )
+
+
+def test_personal_ownership_rejects_team_only_ownership() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.PERSONAL_OWNERSHIP,
+        description="Preserve direct personal ownership.",
+        concept_groups=[
+            ["security design"],
+            ["identity"],
+            ["policy"],
+            ["audit boundaries"],
+        ],
+    )
+
+    assert not evaluate(
+        source=(
+            "I personally handled the security design, "
+            "including identity, policy, and audit boundaries."
+        ),
+        rewrite=(
+            "The team handled the security design, defining "
+            "the identity, policy, and audit boundaries."
+        ),
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_ignores_articles() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve model and verifier responsibilities.",
+        concept_groups=[
+            ["the model proposes"],
+            ["the verifier decides"],
+        ],
+    )
+
+    assert evaluate(
+        source="The model proposes; the verifier decides.",
+        rewrite="Model proposes, verifier decides.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_finish_for_complete() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve review completion.",
+        concept_groups=[
+            [
+                "complete the review",
+                "finish the review",
+                "finalize the review",
+            ]
+        ],
+    )
+
+    assert evaluate(
+        source="Please respond so we can complete the review.",
+        rewrite="Please respond so we can finish the review.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_handles_workflow_state() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve workflow-state responsibility.",
+        concept_groups=[
+            [
+                "manages workflow state",
+                "handles workflow state",
+                "maintains workflow state",
+            ]
+        ],
+    )
+
+    assert evaluate(
+        source="The orchestrator manages workflow state.",
+        rewrite="The orchestrator handles workflow state.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_matters_as_importance() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve importance of secure AI architecture.",
+        concept_groups=[
+            ["secure AI architecture"],
+            [
+                "important",
+                "essential",
+                "critical",
+                "necessary",
+                "matters",
+                "matters more than ever",
+            ],
+        ],
+    )
+
+    assert evaluate(
+        source="Secure AI architecture is increasingly important.",
+        rewrite="Secure AI architecture matters more than ever.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_importance_noun_construction() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve importance of secure AI architecture.",
+        concept_groups=[
+            [
+                "secure AI architecture",
+                "AI architecture is secure",
+            ],
+            [
+                "important",
+                "importance",
+                "essential",
+                "critical",
+                "has never been greater",
+            ],
+        ],
+    )
+
+    assert evaluate(
+        source="Secure AI architecture is increasingly important.",
+        rewrite=("The importance of secure AI architecture has never been greater."),
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_customer_empathy_paraphrase() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve empathy and account-problem context.",
+        concept_groups=[
+            ["sorry", "apologize", "apologies"],
+            ["trouble", "issue", "problem", "difficulty"],
+            ["account"],
+        ],
+    )
+
+    assert evaluate(
+        source="We are sorry about the issue with your account.",
+        rewrite=("We’re truly sorry for the trouble you’ve encountered with your account."),
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_inconvenience() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve the customer problem concept.",
+        concept_groups=[
+            [
+                "trouble",
+                "issue",
+                "problem",
+                "difficulty",
+                "inconvenience",
+            ]
+        ],
+    )
+
+    assert evaluate(
+        source="We apologize for the issue with your account.",
+        rewrite=("We apologize for the inconvenience you experienced with your account."),
+        assertion=assertion,
+    )
+
+
+def test_requirement_accepts_may_not_be_exceeded() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.REQUIREMENT,
+        description="Preserve mandatory budget ceiling.",
+        concept_groups=[
+            ["pilot budget"],
+            ["steering committee approval"],
+        ],
+    )
+
+    assert evaluate(
+        source=("The pilot budget must not be exceeded without steering committee approval."),
+        rewrite=("The pilot budget may not be exceeded without steering committee approval."),
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_workflow_demands() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve workflow authority boundary.",
+        concept_groups=[
+            ["needs", "requires", "demands", "calls for"],
+        ],
+    )
+
+    assert evaluate(
+        source="Use only the authority the workflow requires.",
+        rewrite="Use only the authority the workflow demands.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_initiates_tracing() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve trace creation.",
+        concept_groups=[
+            [
+                "creates the trace",
+                "initiates the trace",
+                "starts the trace",
+                "initiates tracing",
+                "starts tracing",
+            ]
+        ],
+    )
+
+    assert evaluate(
+        source="The gateway creates the trace.",
+        rewrite="The gateway initiates tracing.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_human_intervention() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve human escalation when automation is unsafe.",
+        concept_groups=[
+            ["human escalation", "human intervention", "escalates to humans"],
+            [
+                "automated execution is unsafe",
+                "automation is unsafe",
+            ],
+        ],
+    )
+
+    assert evaluate(
+        source=("The platform provides human escalation when automated execution is unsafe."),
+        rewrite=("The platform uses human intervention when automated execution is unsafe."),
+        assertion=assertion,
+    )
+
+
+def test_personal_ownership_accepts_responsible_for_designing() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.PERSONAL_OWNERSHIP,
+        description="Preserve direct control-plane ownership.",
+        concept_groups=[
+            ["control plane"],
+            ["user interface", "UI"],
+            ["deployment automation"],
+        ],
+    )
+
+    assert evaluate(
+        source=(
+            "I personally designed the control plane while "
+            "the team handled the UI and deployment automation."
+        ),
+        rewrite=(
+            "I was responsible for designing the control plane, "
+            "while the rest of the team focused on the user "
+            "interface and deployment automation."
+        ),
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_traceability_evidence() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve trace-evidence capability.",
+        concept_groups=[
+            [
+                "trace evidence",
+                "traceability evidence",
+                "tracing evidence",
+            ]
+        ],
+    )
+
+    assert evaluate(
+        source="The platform provides trace evidence.",
+        rewrite="The platform offers traceability evidence.",
+        assertion=assertion,
+    )
+
+
+def test_concept_matching_accepts_unsafe_automated_actions() -> None:
+    assertion = RiskAssertion(
+        assertion_type=RiskAssertionType.CONCEPT_GROUPS,
+        description="Preserve unsafe-automation boundary.",
+        concept_groups=[
+            [
+                "automated execution is unsafe",
+                "automation is unsafe",
+                "automated actions deemed unsafe",
+                "automated actions are unsafe",
+            ]
+        ],
+    )
+
+    assert evaluate(
+        source=("The platform escalates when automated execution is unsafe."),
+        rewrite=("The platform escalates automated actions deemed unsafe."),
+        assertion=assertion,
+    )

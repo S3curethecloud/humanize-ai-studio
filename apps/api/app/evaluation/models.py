@@ -15,6 +15,7 @@ class RiskAssertionType(StrEnum):
     REQUIREMENT = "requirement"
     CONCEPT_GROUPS = "concept_groups"
     MINIMAL_CHANGE = "minimal_change"
+    PERSONAL_OWNERSHIP = "personal_ownership"
 
 
 class RiskAssertion(BaseModel):
