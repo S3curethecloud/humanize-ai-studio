@@ -19,3 +19,7 @@ evals/reports/*.json
 
 # Local production environment
 .env.production
+
+# Cloudflare local deployment state
+.wrangler/
+.dev.vars

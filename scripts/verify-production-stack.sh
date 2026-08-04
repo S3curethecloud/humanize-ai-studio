@@ -40,4 +40,21 @@ printf '%s\n' "$response" | grep \
 printf '%s\n' "$response" | grep \
   '"total_tokens":0' >/dev/null
 
+echo "Checking operational metrics..."
+metrics="$(
+  curl --fail --silent --show-error \
+    "${BASE_URL}/metrics"
+)"
+
+printf '%s\n' "$metrics" | grep \
+  "humanize_http_requests_total" >/dev/null
+
+printf '%s\n' "$metrics" | grep \
+  'humanize_rewrite_decisions_total{decision="minimal_edit"}' \
+  >/dev/null
+
+printf '%s\n' "$metrics" | grep \
+  'humanize_rewrite_fallback_total{used="false"}' \
+  >/dev/null
+
 echo "Production stack verification passed."

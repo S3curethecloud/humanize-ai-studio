@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "humanize-ai-studio",
+  "main": "./cloudflare/src/index.ts",
+  "compatibility_date": "2026-08-03",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "workers_dev": true,
+
+  "routes": [
+    {
+      "pattern": "humanize.securethecloud.dev",
+      "custom_domain": true
+    }
+  ],
+
+  "assets": {
+    "directory": "./apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*",
+      "/health",
+      "/ready",
+      "/metrics"
+    ]
+  },
+
+  "containers": [
+    {
+      "class_name": "HumanizeApiContainer",
+      "image": "./apps/api/Dockerfile",
+      "max_instances": 1,
+      "instance_type": "lite"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "API_CONTAINER",
+        "class_name": "HumanizeApiContainer"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "humanize-api-container-v1",
+      "new_sqlite_classes": [
+        "HumanizeApiContainer"
+      ]
+    }
+  ],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
