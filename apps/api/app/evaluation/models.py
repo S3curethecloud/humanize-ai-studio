@@ -1,8 +1,39 @@
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
 
 from app.domain.models import DocumentType, RewriteIntensity
+
+
+class RiskAssertionType(StrEnum):
+    EXACT_PRESERVATION = "exact_preservation"
+    NUMERIC_EQUIVALENCE = "numeric_equivalence"
+    NEGATION = "negation"
+    PROHIBITION = "prohibition"
+    REQUIREMENT = "requirement"
+    CONCEPT_GROUPS = "concept_groups"
+    MINIMAL_CHANGE = "minimal_change"
+
+
+class RiskAssertion(BaseModel):
+    assertion_type: RiskAssertionType
+    description: str = Field(min_length=1, max_length=500)
+    values: list[str] = Field(default_factory=list)
+    concept_groups: list[list[str]] = Field(default_factory=list)
+    minimum_similarity: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+
+class RiskAssertionResult(BaseModel):
+    assertion_type: RiskAssertionType
+    description: str
+    passed: bool
+    details: list[str] = Field(default_factory=list)
 
 
 class EvaluationCase(BaseModel):
@@ -19,6 +50,7 @@ class EvaluationCase(BaseModel):
     expected_substring_groups: list[list[str]] = Field(default_factory=list)
     exact_preservation_substrings: list[str] = Field(default_factory=list)
     forbidden_substrings: list[str] = Field(default_factory=list)
+    risk_assertions: list[RiskAssertion] = Field(default_factory=list)
     expected_factual_decision: str = "pass"
     expected_editorial_decision: str = "pass"
 
@@ -45,6 +77,7 @@ class EvaluationCaseResult(BaseModel):
     total_tokens: int | None = Field(default=None, ge=0)
     estimated_cost_usd: float | None = Field(default=None, ge=0.0)
     rewritten_text: str
+    risk_assertion_results: list[RiskAssertionResult] = Field(default_factory=list)
     failure_reasons: list[str]
 
 

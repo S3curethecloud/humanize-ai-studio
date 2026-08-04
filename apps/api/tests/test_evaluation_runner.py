@@ -209,3 +209,42 @@ def test_batch_runner_accepts_expected_alternative_group() -> None:
     )
 
     assert report.cases[0].accepted is True
+
+
+def test_batch_runner_applies_risk_aware_assertions() -> None:
+    from app.evaluation.models import (
+        RiskAssertion,
+        RiskAssertionType,
+    )
+
+    runner = BatchEvaluationRunner(
+        provider=DeterministicRewriteProvider(),
+    )
+
+    cases = [
+        EvaluationCase(
+            case_id="risk-assertion-001",
+            category="policy",
+            description="Preserve policy prohibition",
+            source_text=("The system must not store raw customer prompts in analytics logs."),
+            risk_assertions=[
+                RiskAssertion(
+                    assertion_type=RiskAssertionType.PROHIBITION,
+                    description="Preserve logging prohibition",
+                    concept_groups=[
+                        ["raw customer prompts"],
+                        ["analytics logs"],
+                    ],
+                )
+            ],
+        )
+    ]
+
+    report = runner.run(
+        dataset_path=Path("in-memory.jsonl"),
+        cases=cases,
+    )
+
+    assert report.cases[0].accepted is True
+    assert len(report.cases[0].risk_assertion_results) == 1
+    assert report.cases[0].risk_assertion_results[0].passed is True

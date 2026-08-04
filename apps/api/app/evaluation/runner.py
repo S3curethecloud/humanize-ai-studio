@@ -16,6 +16,7 @@ from app.evaluation.models import (
     EvaluationReport,
     EvaluationSummary,
 )
+from app.evaluation.risk_assertions import RiskAssertionEvaluator
 from app.evaluation.text_normalization import normalize_evaluation_text
 from app.providers.base import RewriteProvider
 from app.providers.registry import build_rewrite_provider
@@ -75,6 +76,7 @@ class BatchEvaluationRunner:
         output_cost_per_million_tokens_usd: float | None = None,
     ) -> None:
         self._workflow = RewriteWorkflow(provider=provider)
+        self._risk_assertion_evaluator = RiskAssertionEvaluator()
         self._input_cost = _validate_optional_cost(
             input_cost_per_million_tokens_usd,
             "input_cost_per_million_tokens_usd",
@@ -149,6 +151,14 @@ class BatchEvaluationRunner:
             for forbidden in case.forbidden_substrings
         )
 
+        risk_assertion_results = self._risk_assertion_evaluator.evaluate(
+            source_text=case.source_text,
+            rewritten_text=response.rewritten_text,
+            assertions=case.risk_assertions,
+        )
+
+        failed_risk_assertions = [result for result in risk_assertion_results if not result.passed]
+
         failure_reasons: list[str] = []
 
         if response.verification.decision.value != case.expected_factual_decision:
@@ -168,6 +178,9 @@ class BatchEvaluationRunner:
 
         if not forbidden_absent:
             failure_reasons.append("One or more forbidden substrings remained.")
+
+        if failed_risk_assertions:
+            failure_reasons.append("One or more risk-aware assertions failed.")
 
         accepted = not failure_reasons
 
@@ -202,6 +215,7 @@ class BatchEvaluationRunner:
             total_tokens=usage.total_tokens,
             estimated_cost_usd=estimated_cost,
             rewritten_text=response.rewritten_text,
+            risk_assertion_results=risk_assertion_results,
             failure_reasons=failure_reasons,
         )
 
