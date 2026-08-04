@@ -23,6 +23,16 @@ def health() -> dict[str, str]:
     }
 
 
+@router.get("/ready")
+def ready() -> dict[str, str]:
+    return {
+        "status": "ready",
+        "service": "humanize-ai-studio-api",
+        "configured_provider": settings.rewrite_provider.value,
+        "active_provider": provider.provider_name,
+    }
+
+
 @router.post("/api/v1/rewrites", response_model=RewriteResponse)
 def create_rewrite(request: RewriteRequest) -> RewriteResponse:
     return workflow.execute(request)

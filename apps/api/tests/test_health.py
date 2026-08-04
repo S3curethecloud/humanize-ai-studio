@@ -16,3 +16,15 @@ def test_health_endpoint() -> None:
         "configured_provider": "deterministic",
         "active_provider": "deterministic",
     }
+
+
+def test_readiness_endpoint() -> None:
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "service": "humanize-ai-studio-api",
+        "configured_provider": "deterministic",
+        "active_provider": "deterministic",
+    }
