@@ -7,6 +7,8 @@ from app.domain.models import DocumentType, RewriteIntensity
 
 class EvaluationCase(BaseModel):
     case_id: str = Field(min_length=1, max_length=100)
+    category: str = Field(default="general", min_length=1, max_length=100)
+    risk_tags: list[str] = Field(default_factory=list)
     description: str = Field(min_length=1, max_length=500)
     source_text: str = Field(min_length=1, max_length=20_000)
     document_type: DocumentType = DocumentType.GENERAL
@@ -14,6 +16,8 @@ class EvaluationCase(BaseModel):
     tone: str = Field(default="natural and clear", min_length=1, max_length=100)
     intensity: RewriteIntensity = RewriteIntensity.NATURAL_REWRITE
     expected_substrings: list[str] = Field(default_factory=list)
+    expected_substring_groups: list[list[str]] = Field(default_factory=list)
+    exact_preservation_substrings: list[str] = Field(default_factory=list)
     forbidden_substrings: list[str] = Field(default_factory=list)
     expected_factual_decision: str = "pass"
     expected_editorial_decision: str = "pass"
@@ -21,6 +25,8 @@ class EvaluationCase(BaseModel):
 
 class EvaluationCaseResult(BaseModel):
     case_id: str
+    category: str
+    risk_tags: list[str]
     description: str
     accepted: bool
     trace_id: str
@@ -42,6 +48,14 @@ class EvaluationCaseResult(BaseModel):
     failure_reasons: list[str]
 
 
+class CategoryEvaluationSummary(BaseModel):
+    total_cases: int = Field(ge=0)
+    accepted_cases: int = Field(ge=0)
+    acceptance_rate: float = Field(ge=0.0, le=1.0)
+    factual_pass_rate: float = Field(ge=0.0, le=1.0)
+    editorial_pass_rate: float = Field(ge=0.0, le=1.0)
+
+
 class EvaluationSummary(BaseModel):
     total_cases: int = Field(ge=0)
     accepted_cases: int = Field(ge=0)
@@ -58,6 +72,7 @@ class EvaluationSummary(BaseModel):
         default=None,
         ge=0.0,
     )
+    by_category: dict[str, CategoryEvaluationSummary] = Field(default_factory=dict)
 
 
 class EvaluationReport(BaseModel):

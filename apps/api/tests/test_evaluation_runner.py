@@ -123,3 +123,89 @@ def test_batch_runner_rejects_case_when_forbidden_phrase_remains() -> None:
     assert report.summary.acceptance_rate == 0.0
     assert report.cases[0].accepted is False
     assert report.cases[0].failure_reasons == ["One or more forbidden substrings remained."]
+
+
+def test_batch_runner_calculates_category_summaries() -> None:
+    runner = BatchEvaluationRunner(
+        provider=DeterministicRewriteProvider(),
+    )
+
+    cases = [
+        EvaluationCase(
+            case_id="email-001",
+            category="professional_email",
+            description="Email case",
+            source_text="Furthermore, the migration completed in 30 days.",
+            expected_substrings=["30 days"],
+            forbidden_substrings=["furthermore"],
+        ),
+        EvaluationCase(
+            case_id="architecture-001",
+            category="technical_architecture",
+            description="Architecture case",
+            source_text="Additionally, the gateway validates identity context.",
+            expected_substrings=["identity context"],
+            forbidden_substrings=["additionally"],
+        ),
+    ]
+
+    report = runner.run(
+        dataset_path=Path("in-memory.jsonl"),
+        cases=cases,
+    )
+
+    assert report.summary.by_category["professional_email"].total_cases == 1
+    assert report.summary.by_category["professional_email"].acceptance_rate == 1.0
+    assert report.summary.by_category["technical_architecture"].acceptance_rate == 1.0
+
+
+def test_batch_runner_accepts_normalized_unicode_equivalence() -> None:
+    runner = BatchEvaluationRunner(
+        provider=DeterministicRewriteProvider(),
+    )
+
+    cases = [
+        EvaluationCase(
+            case_id="unicode-001",
+            category="customer_support",
+            description="Normalize Unicode date spacing",
+            source_text="Please respond by August 8, 2026.",
+            expected_substrings=["August 8, 2026"],
+        )
+    ]
+
+    report = runner.run(
+        dataset_path=Path("in-memory.jsonl"),
+        cases=cases,
+    )
+
+    assert report.cases[0].accepted is True
+
+
+def test_batch_runner_accepts_expected_alternative_group() -> None:
+    runner = BatchEvaluationRunner(
+        provider=DeterministicRewriteProvider(),
+    )
+
+    cases = [
+        EvaluationCase(
+            case_id="alternative-001",
+            category="interview_answer",
+            description="Accept equivalent achievement wording",
+            source_text="I reduced deployment time by 40%.",
+            expected_substring_groups=[
+                [
+                    "reduced deployment time",
+                    "cut deployment time",
+                ]
+            ],
+            exact_preservation_substrings=["40%"],
+        )
+    ]
+
+    report = runner.run(
+        dataset_path=Path("in-memory.jsonl"),
+        cases=cases,
+    )
+
+    assert report.cases[0].accepted is True

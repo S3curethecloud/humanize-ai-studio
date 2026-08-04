@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from collections import Counter
 
-from app.domain.models import ProtectedFact, ReleaseDecision, VerificationResult
+from app.domain.models import (
+    ProtectedFact,
+    ReleaseDecision,
+    VerificationResult,
+)
 from app.services.fact_extractor import DATE_PATTERN, NUMBER_PATTERN
+from app.services.fact_normalization import normalize_fact_text
 
 
 class RewriteVerifier:
@@ -15,23 +20,27 @@ class RewriteVerifier:
     ) -> VerificationResult:
         del source_text
 
+        normalized_rewrite = normalize_fact_text(rewritten_text)
+
         preserved: list[str] = []
         missing: list[str] = []
 
         for fact in protected_facts:
-            if fact.value in rewritten_text:
+            normalized_value = normalize_fact_text(fact.value)
+
+            if normalized_value in normalized_rewrite:
                 preserved.append(fact.fact_id)
             else:
                 missing.append(fact.fact_id)
 
-        expected_values = Counter(fact.value for fact in protected_facts)
+        expected_values = Counter(normalize_fact_text(fact.value) for fact in protected_facts)
 
-        rewritten_date_matches = list(DATE_PATTERN.finditer(rewritten_text))
+        rewritten_date_matches = list(DATE_PATTERN.finditer(normalized_rewrite))
         rewritten_date_ranges = [(match.start(), match.end()) for match in rewritten_date_matches]
 
         rewritten_values = Counter(match.group(0) for match in rewritten_date_matches)
 
-        for match in NUMBER_PATTERN.finditer(rewritten_text):
+        for match in NUMBER_PATTERN.finditer(normalized_rewrite):
             number_is_inside_date = any(
                 start <= match.start() and match.end() <= end
                 for start, end in rewritten_date_ranges

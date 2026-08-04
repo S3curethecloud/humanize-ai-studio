@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from app.domain.models import ProtectedFact, TextSpan
+from app.services.fact_normalization import normalize_fact_text
 
 NUMBER_PATTERN = re.compile(r"\b(?:\$?\d{1,3}(?:,\d{3})*(?:\.\d+)?%?|\d+(?:\.\d+)?%)\b")
 
@@ -25,16 +26,23 @@ class FactExtractor:
         preserve_numbers: bool,
         preserve_dates: bool,
     ) -> list[ProtectedFact]:
+        normalized_text = normalize_fact_text(text)
         facts: list[ProtectedFact] = []
 
         if preserve_dates:
-            for index, match in enumerate(DATE_PATTERN.finditer(text), start=1):
+            for index, match in enumerate(
+                DATE_PATTERN.finditer(normalized_text),
+                start=1,
+            ):
                 facts.append(
                     ProtectedFact(
                         fact_id=f"date-{index}",
                         value=match.group(0),
                         fact_type="date",
-                        source_span=TextSpan(start=match.start(), end=match.end()),
+                        source_span=TextSpan(
+                            start=match.start(),
+                            end=match.end(),
+                        ),
                     )
                 )
 
@@ -46,8 +54,13 @@ class FactExtractor:
             }
 
             number_index = 1
-            for match in NUMBER_PATTERN.finditer(text):
-                if any(start <= match.start() and match.end() <= end for start, end in date_ranges):
+
+            for match in NUMBER_PATTERN.finditer(normalized_text):
+                number_is_inside_date = any(
+                    start <= match.start() and match.end() <= end for start, end in date_ranges
+                )
+
+                if number_is_inside_date:
                     continue
 
                 facts.append(
@@ -55,7 +68,10 @@ class FactExtractor:
                         fact_id=f"number-{number_index}",
                         value=match.group(0),
                         fact_type="number",
-                        source_span=TextSpan(start=match.start(), end=match.end()),
+                        source_span=TextSpan(
+                            start=match.start(),
+                            end=match.end(),
+                        ),
                     )
                 )
                 number_index += 1

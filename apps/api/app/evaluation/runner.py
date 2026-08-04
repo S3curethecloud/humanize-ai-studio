@@ -10,11 +10,13 @@ from pydantic import ValidationError
 from app.core.settings import Settings
 from app.domain.models import RewriteRequest
 from app.evaluation.models import (
+    CategoryEvaluationSummary,
     EvaluationCase,
     EvaluationCaseResult,
     EvaluationReport,
     EvaluationSummary,
 )
+from app.evaluation.text_normalization import normalize_evaluation_text
 from app.providers.base import RewriteProvider
 from app.providers.registry import build_rewrite_provider
 from app.workflows.rewrite_workflow import RewriteWorkflow
@@ -122,13 +124,29 @@ class BatchEvaluationRunner:
             trace_id=f"eval_{case.case_id}",
         )
 
-        rewritten_lower = response.rewritten_text.casefold()
+        normalized_rewrite = normalize_evaluation_text(response.rewritten_text)
 
         expected_present = all(
-            expected.casefold() in rewritten_lower for expected in case.expected_substrings
+            normalize_evaluation_text(expected) in normalized_rewrite
+            for expected in case.expected_substrings
         )
+
+        expected_groups_present = all(
+            any(
+                normalize_evaluation_text(alternative) in normalized_rewrite
+                for alternative in group
+            )
+            for group in case.expected_substring_groups
+        )
+
+        exact_preservation_present = all(
+            normalize_evaluation_text(expected) in normalized_rewrite
+            for expected in case.exact_preservation_substrings
+        )
+
         forbidden_absent = all(
-            forbidden.casefold() not in rewritten_lower for forbidden in case.forbidden_substrings
+            normalize_evaluation_text(forbidden) not in normalized_rewrite
+            for forbidden in case.forbidden_substrings
         )
 
         failure_reasons: list[str] = []
@@ -141,6 +159,12 @@ class BatchEvaluationRunner:
 
         if not expected_present:
             failure_reasons.append("One or more expected substrings were missing.")
+
+        if not expected_groups_present:
+            failure_reasons.append("One or more expected alternative groups were missing.")
+
+        if not exact_preservation_present:
+            failure_reasons.append("One or more exact-preservation substrings were missing.")
 
         if not forbidden_absent:
             failure_reasons.append("One or more forbidden substrings remained.")
@@ -158,6 +182,8 @@ class BatchEvaluationRunner:
 
         return EvaluationCaseResult(
             case_id=case.case_id,
+            category=case.category,
+            risk_tags=case.risk_tags,
             description=case.description,
             accepted=accepted,
             trace_id=response.trace_id,
@@ -232,7 +258,35 @@ class BatchEvaluationRunner:
             total_tokens=total_tokens,
             estimated_total_cost_usd=estimated_total_cost,
             cost_per_accepted_rewrite_usd=cost_per_accepted,
+            by_category=_summarize_categories(results),
         )
+
+
+def _summarize_categories(
+    results: list[EvaluationCaseResult],
+) -> dict[str, CategoryEvaluationSummary]:
+    grouped: dict[str, list[EvaluationCaseResult]] = {}
+
+    for result in results:
+        grouped.setdefault(result.category, []).append(result)
+
+    summaries: dict[str, CategoryEvaluationSummary] = {}
+
+    for category, category_results in sorted(grouped.items()):
+        total = len(category_results)
+        accepted = sum(result.accepted for result in category_results)
+        factual_passes = sum(result.factual_decision == "pass" for result in category_results)
+        editorial_passes = sum(result.editorial_decision == "pass" for result in category_results)
+
+        summaries[category] = CategoryEvaluationSummary(
+            total_cases=total,
+            accepted_cases=accepted,
+            acceptance_rate=round(accepted / total, 3),
+            factual_pass_rate=round(factual_passes / total, 3),
+            editorial_pass_rate=round(editorial_passes / total, 3),
+        )
+
+    return summaries
 
 
 def _validate_optional_cost(
