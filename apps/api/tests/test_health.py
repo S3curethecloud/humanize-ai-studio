@@ -13,4 +13,6 @@ def test_health_endpoint() -> None:
         "status": "ok",
         "service": "humanize-ai-studio-api",
         "mode": "deterministic",
+        "configured_provider": "deterministic",
+        "active_provider": "deterministic",
     }

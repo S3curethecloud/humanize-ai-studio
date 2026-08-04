@@ -1,0 +1,15 @@
+from __future__ import annotations
+
+import os
+
+_PROVIDER_ENVIRONMENT_VARIABLES = (
+    "HUMANIZE_REWRITE_PROVIDER",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_AI_MODEL",
+    "CLOUDFLARE_AI_TIMEOUT_SECONDS",
+    "CLOUDFLARE_AI_FALLBACK_ENABLED",
+)
+
+for variable_name in _PROVIDER_ENVIRONMENT_VARIABLES:
+    os.environ.pop(variable_name, None)
