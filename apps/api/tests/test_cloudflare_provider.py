@@ -179,3 +179,98 @@ def test_cloudflare_provider_parses_chat_completions_response() -> None:
     assert result.text == "The team completed the migration in 30 days."
     assert result.provider_name == "cloudflare-workers-ai"
     assert result.prompt_version == "cloudflare-humanize-v3"
+
+
+def test_cloudflare_provider_rejects_claim_inflation() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "errors": [],
+                "messages": [],
+                "result": {
+                    "response": json.dumps(
+                        {
+                            "rewritten_text": (
+                                "I have extensive experience and "
+                                "developed expertise in generative AI."
+                            )
+                        }
+                    )
+                },
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    provider = CloudflareWorkersAIProvider(
+        account_id="test-account",
+        api_token="test-token",
+        client=client,
+    )
+
+    with pytest.raises(
+        RewriteProviderResponseError,
+        match="claim-integrity validation",
+    ):
+        provider.rewrite(
+            RewriteRequest(
+                text=("I have hands-on experience with generative AI."),
+                document_type="professional_email",
+                audience="technical hiring team",
+                tone="natural and professional",
+                intensity="deep_reconstruction",
+            )
+        )
+
+
+def test_cloudflare_provider_accepts_claim_preserving_rewrite() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "errors": [],
+                "messages": [],
+                "result": {
+                    "response": json.dumps(
+                        {
+                            "rewritten_text": (
+                                "I work with generative AI and have "
+                                "hands-on experience across RAG and "
+                                "agentic workflows."
+                            )
+                        }
+                    )
+                },
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    provider = CloudflareWorkersAIProvider(
+        account_id="test-account",
+        api_token="test-token",
+        client=client,
+    )
+
+    result = provider.rewrite(
+        RewriteRequest(
+            text=(
+                "I have hands-on experience with generative AI across RAG and agentic workflows."
+            ),
+            document_type="professional_email",
+            audience="technical hiring team",
+            tone="natural and professional",
+            intensity="deep_reconstruction",
+        )
+    )
+
+    assert result.provider_name == "cloudflare-workers-ai"
+    assert result.fallback_used is False
+    assert "hands-on experience" in result.text

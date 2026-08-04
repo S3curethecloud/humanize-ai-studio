@@ -8,6 +8,7 @@ import httpx
 
 from app.domain.models import RewriteChange, RewriteRequest
 from app.providers.base import ProviderUsage, RewriteProviderResult
+from app.providers.claim_integrity import find_claim_integrity_violations
 from app.providers.exceptions import (
     RewriteProviderConfigurationError,
     RewriteProviderResponseError,
@@ -124,6 +125,20 @@ class CloudflareWorkersAIProvider:
         generated_output = _extract_generated_output(response_body)
         rewritten_text = _parse_rewritten_text(generated_output)
         usage = _extract_usage(response_body)
+
+        integrity_violations = find_claim_integrity_violations(
+            source_text=request.text,
+            rewritten_text=rewritten_text,
+        )
+
+        if integrity_violations:
+            violation_summary = "; ".join(
+                (f"{violation.rule_id}: {violation.phrase!r}") for violation in integrity_violations
+            )
+
+            raise RewriteProviderResponseError(
+                f"Cloudflare rewrite failed claim-integrity validation: {violation_summary}"
+            )
 
         changes: list[RewriteChange] = []
 
