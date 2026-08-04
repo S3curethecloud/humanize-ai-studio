@@ -12,3 +12,7 @@ build/
 *.egg-info/
 node_modules/
 .DS_Store
+
+# Generated evaluation reports
+evals/reports/*.json
+!evals/reports/.gitkeep
