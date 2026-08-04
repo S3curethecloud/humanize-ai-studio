@@ -56,3 +56,57 @@ def test_date_is_preserved() -> None:
 
     assert "August 4, 2026" in body["rewritten_text"]
     assert body["verification"]["decision"] == "pass"
+
+
+def test_workflow_blocks_when_rewriter_removes_protected_fact() -> None:
+    from app.domain.models import RewriteRequest
+    from app.services.deterministic_rewriter import DeterministicRewriteResult
+    from app.workflows.rewrite_workflow import RewriteWorkflow
+
+    class UnsafeRewriter:
+        def rewrite(self, text: str) -> DeterministicRewriteResult:
+            del text
+            return DeterministicRewriteResult(
+                text="The team completed the migration.",
+                changes=[],
+            )
+
+    workflow = RewriteWorkflow(rewriter=UnsafeRewriter())  # type: ignore[arg-type]
+
+    result = workflow.execute(
+        RewriteRequest(
+            text="The team completed the migration in 30 days.",
+            document_type="general",
+        )
+    )
+
+    assert result.verification.decision == "fail"
+    assert result.workflow_states[-1] == "blocked"
+    assert result.verification.missing_facts == ["number-1"]
+
+
+def test_workflow_requires_review_when_rewriter_adds_number() -> None:
+    from app.domain.models import RewriteRequest
+    from app.services.deterministic_rewriter import DeterministicRewriteResult
+    from app.workflows.rewrite_workflow import RewriteWorkflow
+
+    class UnsafeRewriter:
+        def rewrite(self, text: str) -> DeterministicRewriteResult:
+            del text
+            return DeterministicRewriteResult(
+                text="The team completed the migration in 14 days.",
+                changes=[],
+            )
+
+    workflow = RewriteWorkflow(rewriter=UnsafeRewriter())  # type: ignore[arg-type]
+
+    result = workflow.execute(
+        RewriteRequest(
+            text="The team completed the migration.",
+            document_type="general",
+        )
+    )
+
+    assert result.verification.decision == "warn"
+    assert result.workflow_states[-1] == "requires_review"
+    assert result.verification.unexpected_facts == ["14"]
