@@ -26,11 +26,11 @@ def test_rewrite_removes_formulaic_language_and_preserves_number() -> None:
 
     assert body["rewritten_text"] == "The team completed the project in 30 days."
     assert body["trace_id"].startswith("rewrite_")
-    assert body["provider_name"] == "deterministic"
-    assert body["model_name"] == "rules-v1"
-    assert body["prompt_version"] == "deterministic-rewrite-v1"
-    assert body["provider_execution"]["primary_provider_name"] == "deterministic"
-    assert body["provider_execution"]["actual_provider_name"] == "deterministic"
+    assert body["provider_name"] == "rewrite-necessity-analyzer"
+    assert body["model_name"] == "deterministic-minimal-edit"
+    assert body["prompt_version"] == "rewrite-necessity-v1"
+    assert body["provider_execution"]["primary_provider_name"] == "rewrite-necessity-analyzer"
+    assert body["provider_execution"]["actual_provider_name"] == "rewrite-necessity-analyzer"
     assert body["provider_execution"]["fallback_used"] is False
     assert body["provider_execution"]["provider_error_category"] is None
     assert body["provider_execution"]["latency_ms"] >= 0
@@ -96,6 +96,7 @@ def test_workflow_blocks_when_provider_removes_protected_fact() -> None:
         RewriteRequest(
             text="The team completed the migration in 30 days.",
             document_type="general",
+            intensity="deep_reconstruction",
         )
     )
 
@@ -131,6 +132,7 @@ def test_workflow_requires_review_when_provider_adds_number() -> None:
         RewriteRequest(
             text="The team completed the migration.",
             document_type="general",
+            intensity="deep_reconstruction",
         )
     )
 

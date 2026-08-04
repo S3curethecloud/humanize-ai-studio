@@ -11,7 +11,10 @@ def test_workflow_returns_trace_and_deterministic_execution_evidence() -> None:
     workflow = RewriteWorkflow(provider=DeterministicRewriteProvider())
 
     result = workflow.execute(
-        RewriteRequest(text="Furthermore, the migration completed in 30 days."),
+        RewriteRequest(
+            text="Furthermore, the migration completed in 30 days.",
+            intensity="deep_reconstruction",
+        ),
         trace_id="trace-test-001",
     )
 
@@ -65,7 +68,10 @@ def test_cloudflare_provider_extracts_chat_completion_usage() -> None:
     )
 
     result = provider.rewrite(
-        RewriteRequest(text="Furthermore, the migration completed in 30 days.")
+        RewriteRequest(
+            text="Furthermore, the migration completed in 30 days.",
+            intensity="deep_reconstruction",
+        )
     )
 
     assert result.usage.input_tokens == 120
@@ -104,7 +110,10 @@ def test_fallback_records_primary_failure_and_actual_provider() -> None:
     workflow = RewriteWorkflow(provider=provider)
 
     result = workflow.execute(
-        RewriteRequest(text="Furthermore, the migration completed in 30 days.")
+        RewriteRequest(
+            text="Furthermore, the migration completed in 30 days.",
+            intensity="deep_reconstruction",
+        )
     )
 
     assert result.provider_name == "deterministic"
