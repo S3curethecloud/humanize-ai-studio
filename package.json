@@ -3,12 +3,12 @@
   "private": true,
   "scripts": {
     "build:web": "npm --prefix apps/web run build",
-    "cf:typecheck": "wrangler types && tsc --project tsconfig.cloudflare.json --noEmit",
+    "cf:typecheck": "npm run cf:types && tsc --project tsconfig.cloudflare.json --noEmit",
     "cf:dry-run": "npm run build:web && wrangler deploy --dry-run",
     "cf:dev": "npm run build:web && wrangler dev",
     "cf:deploy": "npm run build:web && wrangler deploy",
     "cf:tail": "wrangler tail",
-    "cf:types": "wrangler types"
+    "cf:types": "mkdir -p cloudflare/types && wrangler types cloudflare/types/worker-configuration.d.ts"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7"

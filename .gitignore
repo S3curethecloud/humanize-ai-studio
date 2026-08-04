@@ -23,3 +23,5 @@ evals/reports/*.json
 # Cloudflare local deployment state
 .wrangler/
 .dev.vars
+cloudflare/types/
+worker-configuration.d.ts
