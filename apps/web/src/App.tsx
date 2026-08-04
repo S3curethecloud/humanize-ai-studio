@@ -1,4 +1,9 @@
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useState
+} from "react";
 
 import {
   submitRewrite,
@@ -21,13 +26,81 @@ const INITIAL_REQUEST: RewriteRequest = {
   preserve_dates: true
 };
 
+interface SubmittedResult {
+  request: RewriteRequest;
+  response: RewriteResponse;
+}
+
+const INTENSITY_LABELS: Record<
+  RewriteRequest["intensity"],
+  string
+> = {
+  light_edit: "Light edit",
+  natural_rewrite: "Natural rewrite",
+  deep_reconstruction: "Deep reconstruction"
+};
+
+const DOCUMENT_TYPE_LABELS: Record<
+  RewriteRequest["document_type"],
+  string
+> = {
+  general: "General",
+  professional_email: "Professional email",
+  interview_answer: "Interview answer",
+  technical_document: "Technical document",
+  social_post: "Social post"
+};
+
+function cloneRequest(
+  request: RewriteRequest
+): RewriteRequest {
+  return {
+    ...request
+  };
+}
+
+function requestsMatch(
+  current: RewriteRequest,
+  submitted: RewriteRequest
+): boolean {
+  return (
+    current.text === submitted.text &&
+    current.document_type === submitted.document_type &&
+    current.audience === submitted.audience &&
+    current.tone === submitted.tone &&
+    current.intensity === submitted.intensity &&
+    current.preserve_numbers === submitted.preserve_numbers &&
+    current.preserve_dates === submitted.preserve_dates
+  );
+}
+
 export default function App() {
   const [request, setRequest] =
     useState<RewriteRequest>(INITIAL_REQUEST);
-  const [response, setResponse] =
-    useState<RewriteResponse | null>(null);
+  const [submittedResult, setSubmittedResult] =
+    useState<SubmittedResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copyState, setCopyState] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
+
+  const response = submittedResult?.response ?? null;
+
+  const isResultStale = useMemo(() => {
+    if (submittedResult === null) {
+      return false;
+    }
+
+    return !requestsMatch(
+      request,
+      submittedResult.request
+    );
+  }, [request, submittedResult]);
+
+  useEffect(() => {
+    setCopyState("idle");
+  }, [response?.trace_id]);
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
@@ -36,12 +109,20 @@ export default function App() {
 
     setError(null);
     setIsSubmitting(true);
+    setCopyState("idle");
+
+    const requestSnapshot = cloneRequest(request);
 
     try {
-      const result = await submitRewrite(request);
-      setResponse(result);
+      const result = await submitRewrite(
+        requestSnapshot
+      );
+
+      setSubmittedResult({
+        request: requestSnapshot,
+        response: result
+      });
     } catch (caughtError) {
-      setResponse(null);
       setError(
         caughtError instanceof Error
           ? caughtError.message
@@ -49,6 +130,21 @@ export default function App() {
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleCopyResult() {
+    if (response === null) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        response.rewritten_text
+      );
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
     }
   }
 
@@ -64,7 +160,10 @@ export default function App() {
         </div>
 
         <nav aria-label="Primary navigation">
-          <a className="nav-item nav-item--active" href="#studio">
+          <a
+            className="nav-item nav-item--active"
+            href="#studio"
+          >
             Rewrite Studio
           </a>
           <a className="nav-item" href="#audit">
@@ -108,7 +207,8 @@ export default function App() {
               </div>
 
               <span>
-                {request.text.length.toLocaleString()} characters
+                {request.text.length.toLocaleString()}{" "}
+                characters
               </span>
             </div>
 
@@ -162,7 +262,9 @@ export default function App() {
                     }))
                   }
                 >
-                  <option value="general">General</option>
+                  <option value="general">
+                    General
+                  </option>
                   <option value="professional_email">
                     Professional email
                   </option>
@@ -182,26 +284,98 @@ export default function App() {
             <button
               className="primary-action"
               disabled={
-                isSubmitting || request.text.trim() === ""
+                isSubmitting ||
+                request.text.trim() === ""
               }
               type="submit"
             >
               {isSubmitting
                 ? "Evaluating rewrite need..."
-                : "Analyze and rewrite"}
+                : isResultStale
+                  ? "Run again with updated inputs"
+                  : "Analyze and rewrite"}
             </button>
 
+            {isResultStale && (
+              <div
+                className="stale-notice stale-notice--editor"
+                role="status"
+              >
+                Inputs changed. Run again to refresh the
+                displayed result.
+              </div>
+            )}
+
             {error && (
-              <div className="error-banner" role="alert">
+              <div
+                className="error-banner"
+                role="alert"
+              >
                 {error}
               </div>
             )}
           </form>
 
           <section className="result-column">
-            {response ? (
+            {response && submittedResult ? (
               <>
-                <RewriteDecisionCard response={response} />
+                {isResultStale && (
+                  <section
+                    className="stale-notice stale-notice--result"
+                    aria-labelledby="stale-result-title"
+                  >
+                    <div>
+                      <strong id="stale-result-title">
+                        Displayed result is from an earlier
+                        submission
+                      </strong>
+                      <span>
+                        Your current text or controls have
+                        changed. The result below has not
+                        been regenerated.
+                      </span>
+                    </div>
+
+                    <span className="stale-badge">
+                      Refresh required
+                    </span>
+                  </section>
+                )}
+
+                <section
+                  className="submission-context"
+                  aria-label="Submitted request settings"
+                >
+                  <div>
+                    <p className="eyebrow">
+                      Processed as
+                    </p>
+                    <strong>
+                      {
+                        DOCUMENT_TYPE_LABELS[
+                          submittedResult.request
+                            .document_type
+                        ]
+                      }
+                    </strong>
+                    <span aria-hidden="true">·</span>
+                    <strong>
+                      {
+                        INTENSITY_LABELS[
+                          submittedResult.request.intensity
+                        ]
+                      }
+                    </strong>
+                  </div>
+
+                  <span className="submission-context__trace">
+                    Trace {response.trace_id}
+                  </span>
+                </section>
+
+                <RewriteDecisionCard
+                  response={response}
+                />
 
                 <article className="output-card">
                   <div className="card-header">
@@ -210,17 +384,39 @@ export default function App() {
                       <h2>Rewritten text</h2>
                     </div>
 
-                    <span>
-                      {
-                        response.rewritten_text.length
-                      }{" "}
-                      characters
-                    </span>
+                    <div className="output-card__actions">
+                      <span>
+                        {response.rewritten_text.length}{" "}
+                        characters
+                      </span>
+
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        onClick={handleCopyResult}
+                      >
+                        {copyState === "copied"
+                          ? "Copied"
+                          : copyState === "failed"
+                            ? "Copy failed"
+                            : "Copy result"}
+                      </button>
+                    </div>
                   </div>
 
                   <p className="rewritten-text">
                     {response.rewritten_text}
                   </p>
+
+                  <div
+                    className="copy-status"
+                    aria-live="polite"
+                  >
+                    {copyState === "copied" &&
+                      "Rewritten text copied to the clipboard."}
+                    {copyState === "failed" &&
+                      "The browser could not copy the result. Select the text and copy it manually."}
+                  </div>
                 </article>
 
                 <div id="audit">
@@ -231,7 +427,9 @@ export default function App() {
               </>
             ) : (
               <section className="empty-state">
-                <div className="empty-state__icon">Aa</div>
+                <div className="empty-state__icon">
+                  Aa
+                </div>
                 <h2>Ready to evaluate your text</h2>
                 <p>
                   The platform will first determine whether
