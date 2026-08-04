@@ -98,6 +98,9 @@ class RewriteResponse(BaseModel):
     workflow_states: list[WorkflowState]
     source_text: str
     rewritten_text: str
+    provider_name: str
+    model_name: str
+    prompt_version: str
     analysis: AnalysisResult
     protected_facts: list[ProtectedFact]
     changes: list[RewriteChange]

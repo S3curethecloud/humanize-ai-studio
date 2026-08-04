@@ -25,6 +25,9 @@ def test_rewrite_removes_formulaic_language_and_preserves_number() -> None:
     body = response.json()
 
     assert body["rewritten_text"] == "The team completed the project in 30 days."
+    assert body["provider_name"] == "deterministic"
+    assert body["model_name"] == "rules-v1"
+    assert body["prompt_version"] == "deterministic-rewrite-v1"
     assert body["verification"]["decision"] == "pass"
     assert body["verification"]["missing_facts"] == []
     assert body["workflow_states"][-1] == "ready_for_review"
@@ -58,20 +61,27 @@ def test_date_is_preserved() -> None:
     assert body["verification"]["decision"] == "pass"
 
 
-def test_workflow_blocks_when_rewriter_removes_protected_fact() -> None:
+def test_workflow_blocks_when_provider_removes_protected_fact() -> None:
     from app.domain.models import RewriteRequest
-    from app.services.deterministic_rewriter import DeterministicRewriteResult
+    from app.providers.base import RewriteProviderResult
     from app.workflows.rewrite_workflow import RewriteWorkflow
 
-    class UnsafeRewriter:
-        def rewrite(self, text: str) -> DeterministicRewriteResult:
-            del text
-            return DeterministicRewriteResult(
+    class UnsafeProvider:
+        @property
+        def provider_name(self) -> str:
+            return "unsafe-test-provider"
+
+        def rewrite(self, request: RewriteRequest) -> RewriteProviderResult:
+            del request
+            return RewriteProviderResult(
                 text="The team completed the migration.",
                 changes=[],
+                provider_name=self.provider_name,
+                model_name="unsafe-test-model",
+                prompt_version="unsafe-test-v1",
             )
 
-    workflow = RewriteWorkflow(rewriter=UnsafeRewriter())  # type: ignore[arg-type]
+    workflow = RewriteWorkflow(provider=UnsafeProvider())
 
     result = workflow.execute(
         RewriteRequest(
@@ -83,22 +93,30 @@ def test_workflow_blocks_when_rewriter_removes_protected_fact() -> None:
     assert result.verification.decision == "fail"
     assert result.workflow_states[-1] == "blocked"
     assert result.verification.missing_facts == ["number-1"]
+    assert result.provider_name == "unsafe-test-provider"
 
 
-def test_workflow_requires_review_when_rewriter_adds_number() -> None:
+def test_workflow_requires_review_when_provider_adds_number() -> None:
     from app.domain.models import RewriteRequest
-    from app.services.deterministic_rewriter import DeterministicRewriteResult
+    from app.providers.base import RewriteProviderResult
     from app.workflows.rewrite_workflow import RewriteWorkflow
 
-    class UnsafeRewriter:
-        def rewrite(self, text: str) -> DeterministicRewriteResult:
-            del text
-            return DeterministicRewriteResult(
+    class UnsafeProvider:
+        @property
+        def provider_name(self) -> str:
+            return "unsafe-test-provider"
+
+        def rewrite(self, request: RewriteRequest) -> RewriteProviderResult:
+            del request
+            return RewriteProviderResult(
                 text="The team completed the migration in 14 days.",
                 changes=[],
+                provider_name=self.provider_name,
+                model_name="unsafe-test-model",
+                prompt_version="unsafe-test-v1",
             )
 
-    workflow = RewriteWorkflow(rewriter=UnsafeRewriter())  # type: ignore[arg-type]
+    workflow = RewriteWorkflow(provider=UnsafeProvider())
 
     result = workflow.execute(
         RewriteRequest(
@@ -110,3 +128,4 @@ def test_workflow_requires_review_when_rewriter_adds_number() -> None:
     assert result.verification.decision == "warn"
     assert result.workflow_states[-1] == "requires_review"
     assert result.verification.unexpected_facts == ["14"]
+    assert result.provider_name == "unsafe-test-provider"
