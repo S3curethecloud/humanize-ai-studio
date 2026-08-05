@@ -14,6 +14,7 @@ from app.providers.exceptions import (
     RewriteProviderResponseError,
     RewriteProviderTransportError,
 )
+from app.providers.rewrite_distance import evaluate_rewrite_distance
 
 REWRITE_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "json_schema",
@@ -221,6 +222,23 @@ class CloudflareWorkersAIProvider:
                     f"Cloudflare repair failed claim-integrity validation: {repaired_summary}"
                 )
 
+            repair_distance = evaluate_rewrite_distance(
+                source_text=request.text,
+                rewritten_text=repaired_text,
+                intensity=request.intensity,
+            )
+
+            if not repair_distance.acceptable:
+                raise RewriteProviderResponseError(
+                    "Cloudflare repair failed useful-distance "
+                    "validation: "
+                    f"{repair_distance.reason} "
+                    "similarity_ratio="
+                    f"{repair_distance.similarity_ratio:.4f}; "
+                    "changed_token_count="
+                    f"{repair_distance.changed_token_count}"
+                )
+
             rewritten_text = repaired_text
             usage = _merge_usage(
                 usage,
@@ -250,7 +268,7 @@ class CloudflareWorkersAIProvider:
             changes=changes,
             provider_name=self.provider_name,
             model_name=self._model_name,
-            prompt_version="cloudflare-humanize-v4",
+            prompt_version="cloudflare-humanize-v5",
             latency_ms=round((perf_counter() - started_at) * 1000, 3),
             primary_provider_name=self.provider_name,
             fallback_used=False,
@@ -360,6 +378,13 @@ class CloudflareWorkersAIProvider:
             "scope, certainty, and impact claim.\n"
             "- Remove promotional filler and invented outcomes.\n"
             "- Do not copy the rejected wording when it caused a violation.\n"
+            "- Do not return the source text verbatim unless the requested "
+            "intensity is light_polish and no safe wording improvement exists.\n"
+            "- For moderate_rewrite or deep_reconstruction, make at least one "
+            "clear structural or lexical improvement while preserving every "
+            "claim and required phrase.\n"
+            "- For deep_reconstruction, reorganize sentence structure or "
+            "information order rather than merely changing punctuation.\n"
             "- Do not return commentary, explanations, headings, or notes.\n"
             "- Return only the structured response required by the schema.\n\n"
             "SOURCE TEXT:\n"
