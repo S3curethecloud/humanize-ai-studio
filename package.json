@@ -8,7 +8,8 @@
     "cf:dev": "npm run build:web && wrangler dev",
     "cf:deploy": "npm run build:web && wrangler deploy",
     "cf:tail": "wrangler tail",
-    "cf:types": "mkdir -p cloudflare/types && wrangler types cloudflare/types/worker-configuration.d.ts"
+    "cf:types": "mkdir -p cloudflare/types && wrangler types cloudflare/types/worker-configuration.d.ts",
+    "release:gate": "bash scripts/final-release-gate.sh"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7"
