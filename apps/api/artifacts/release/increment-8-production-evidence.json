@@ -1,0 +1,122 @@
+{
+  "acceptance_path": "preferred_cloudflare_provider",
+  "acceptance_response": {
+    "analysis": {
+      "flagged_segments": [],
+      "scores": {
+        "generic_language": 0.0,
+        "repetition": 0.0,
+        "sentence_uniformity": 0.918,
+        "transition_overuse": 0.0
+      }
+    },
+    "changes": [
+      {
+        "change_id": "change-cloudflare-1",
+        "change_type": "model_reconstruction",
+        "original": "I have hands-on experience contributing to enterprise generative AI architecture. In my current role, I work across retrieval-augmented generation, agentic workflows, identity, governance, and cloud integration. My work includes architecture design, implementation support, and technical collaboration, but I do not claim sole ownership of every production deployment.",
+        "reason": "Cloudflare Workers AI reconstructed the draft using the requested audience, tone, and rewrite intensity, followed by one policy-constrained repair.",
+        "replacement": "I have hands-on experience contributing to enterprise generative AI architecture, which in my current role involves work across retrieval-augmented generation, agentic workflows, identity, governance, and cloud integration, including architecture design, implementation support, and technical collaboration, but I do not claim sole ownership of every production deployment."
+      }
+    ],
+    "editorial_quality": {
+      "decision": "pass",
+      "naturalness_score": 1.0,
+      "remaining_flag_count": 0,
+      "remaining_flagged_segments": [],
+      "removed_flag_count": 0,
+      "source_flag_count": 0,
+      "warnings": []
+    },
+    "model_name": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "prompt_version": "cloudflare-humanize-v8",
+    "protected_facts": [],
+    "provider_execution": {
+      "actual_provider_name": "cloudflare-workers-ai",
+      "fallback_used": false,
+      "latency_ms": 9555.642,
+      "primary_provider_name": "cloudflare-workers-ai",
+      "provider_error_category": null,
+      "usage": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "total_tokens": null
+      }
+    },
+    "provider_name": "cloudflare-workers-ai",
+    "rewrite_necessity": {
+      "decision": "full_rewrite",
+      "provider_required": true,
+      "rationale": "The text contains structural rewrite needs or the requested intensity explicitly requires generative reconstruction.",
+      "score": 60,
+      "signals": [
+        {
+          "description": "The requested intensity explicitly authorizes substantial reconstruction.",
+          "evidence": [
+            "deep_reconstruction"
+          ],
+          "score": 60,
+          "signal_type": "intensity_request"
+        }
+      ]
+    },
+    "rewritten_text": "I have hands-on experience contributing to enterprise generative AI architecture, which in my current role involves work across retrieval-augmented generation, agentic workflows, identity, governance, and cloud integration, including architecture design, implementation support, and technical collaboration, but I do not claim sole ownership of every production deployment.",
+    "source_text": "I have hands-on experience contributing to enterprise generative AI architecture. In my current role, I work across retrieval-augmented generation, agentic workflows, identity, governance, and cloud integration. My work includes architecture design, implementation support, and technical collaboration, but I do not claim sole ownership of every production deployment.",
+    "trace_id": "rewrite_4a08937f1ba94147850059d1f6730a25",
+    "verification": {
+      "decision": "pass",
+      "missing_facts": [],
+      "preserved_facts": [],
+      "unexpected_facts": [],
+      "warnings": []
+    },
+    "workflow_states": [
+      "received",
+      "validated",
+      "claims_extracted",
+      "patterns_analyzed",
+      "rewrite_generated",
+      "output_verified",
+      "ready_for_review"
+    ]
+  },
+  "checks": {
+    "configured_provider": true,
+    "editorial_quality": true,
+    "final_release_gate": true,
+    "preferred_provider_path": true,
+    "prompt_version": true,
+    "readiness": true,
+    "verification": true
+  },
+  "container_image_digest": "sha256:60444ef147f3ba6152ffcfb57325ee7a1789568f25e57b331cbb759deb6a48c2",
+  "final_release_gate": {
+    "checks": {
+      "cloudflare_dry_run": "passed",
+      "cloudflare_typecheck": "passed",
+      "evaluation": "passed",
+      "frontend_build": "passed",
+      "mypy": "passed",
+      "pytest": "passed",
+      "ruff": "passed"
+    },
+    "commit_sha": "590057c07dcc8e858c84404f6552dd72583cee6c",
+    "release_gate": {
+      "failures": [],
+      "passed": true
+    },
+    "schema_version": "humanize-final-release-v1"
+  },
+  "generated_at": "2026-08-05T04:01:54.623738+00:00",
+  "implementation_commit": "590057c07dcc8e858c84404f6552dd72583cee6c",
+  "production_url": "https://humanize.securethecloud.dev",
+  "readiness": {
+    "active_provider": "cloudflare-workers-ai-with-fallback",
+    "configured_provider": "cloudflare",
+    "service": "humanize-ai-studio-api",
+    "status": "ready"
+  },
+  "release_name": "quality-hardening-increment-8",
+  "schema_version": "humanize-production-evidence-v1",
+  "worker_version_id": "f2cbb73d-feca-4e04-a6bc-4bb6e8f05702"
+}

@@ -1,0 +1,65 @@
+{
+  "branch": "main",
+  "checks": {
+    "cloudflare_dry_run": "passed",
+    "cloudflare_typecheck": "passed",
+    "evaluation": "passed",
+    "frontend_build": "passed",
+    "mypy": "passed",
+    "pytest": "passed",
+    "ruff": "passed"
+  },
+  "commit_sha": "590057c07dcc8e858c84404f6552dd72583cee6c",
+  "evaluation_release_gate": {
+    "failures": [],
+    "passed": true
+  },
+  "evaluation_schema_version": "humanize-evaluation-v2",
+  "generated_at": "2026-08-05T03:54:28.080848+00:00",
+  "performance_summary": {
+    "claim_integrity_rejection_count": 0,
+    "claim_integrity_rejection_rate": 0.0,
+    "deep_structural_failure_release_count": 0,
+    "fallback_count": 0,
+    "fallback_rate": 0.0,
+    "maximum_observed_model_call_count": 2,
+    "provider_response_rejection_count": 0,
+    "provider_success_count": 4,
+    "provider_success_rate": 1.0,
+    "provider_transport_rejection_count": 0,
+    "release_gate": {
+      "failures": [],
+      "passed": true
+    },
+    "repair_attempt_count": 1,
+    "repair_attempt_rate": 0.25,
+    "repair_success_count": 1,
+    "repair_success_rate": 1.0,
+    "structural_blueprint_rejection_count": 0,
+    "structural_blueprint_rejection_rate": 0.0,
+    "total_cases": 4,
+    "unsafe_output_release_count": 0,
+    "useful_distance_rejection_count": 0,
+    "useful_distance_rejection_rate": 0.0
+  },
+  "release_gate": {
+    "failures": [],
+    "passed": true
+  },
+  "release_name": "quality-hardening-increment-8",
+  "safety_control_gate": {
+    "case_count": 3,
+    "controlled_fallback_count": 3,
+    "failures": [],
+    "maximum_observed_model_call_count": 2,
+    "passed": true,
+    "unsafe_output_release_count": 0
+  },
+  "schema_version": "humanize-final-release-v1",
+  "working_tree": {
+    "status_lines": [
+      " M apps/api/artifacts/evaluation/quality-evaluation.json"
+    ],
+    "unexpected_paths": []
+  }
+}
