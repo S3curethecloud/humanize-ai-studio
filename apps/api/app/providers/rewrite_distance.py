@@ -197,3 +197,48 @@ def _sentence_count(value: str) -> int:
 
 def _tokens(value: str) -> tuple[str, ...]:
     return tuple(token.casefold() for token in _TOKEN_PATTERN.findall(value))
+
+
+def follows_deep_repair_blueprint(
+    *,
+    source_text: str,
+    rewritten_text: str,
+) -> bool:
+    source_sentences = _sentences(source_text)
+
+    if len(source_sentences) < 2:
+        return (
+            _sentence_count(rewritten_text) >= 2
+            and _moved_token_count(
+                source_text,
+                rewritten_text,
+            )
+            >= _MINIMUM_DEEP_MOVED_TOKENS
+        )
+
+    first_source_tokens = set(_tokens(source_sentences[0]))
+    final_source_tokens = set(_tokens(source_sentences[-1]))
+
+    final_distinctive_tokens = final_source_tokens - first_source_tokens
+
+    if not final_distinctive_tokens:
+        return False
+
+    rewritten_tokens = _tokens(rewritten_text)
+
+    if not rewritten_tokens:
+        return False
+
+    opening_length = max(
+        5,
+        round(len(rewritten_tokens) * 0.35),
+    )
+    opening_tokens = set(rewritten_tokens[:opening_length])
+
+    return bool(opening_tokens & final_distinctive_tokens)
+
+
+def _sentences(value: str) -> tuple[str, ...]:
+    return tuple(
+        segment.strip() for segment in _SENTENCE_BOUNDARY_PATTERN.split(value) if segment.strip()
+    )

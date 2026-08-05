@@ -56,7 +56,7 @@ def test_cloudflare_provider_returns_structured_result() -> None:
     assert result.text == "The team completed the migration in 30 days."
     assert result.provider_name == "cloudflare-workers-ai"
     assert result.model_name == "@cf/openai/gpt-oss-20b"
-    assert result.prompt_version == "cloudflare-humanize-v6"
+    assert result.prompt_version == "cloudflare-humanize-v8"
 
 
 def test_cloudflare_provider_rejects_non_json_model_output() -> None:
@@ -178,7 +178,7 @@ def test_cloudflare_provider_parses_chat_completions_response() -> None:
 
     assert result.text == "The team completed the migration in 30 days."
     assert result.provider_name == "cloudflare-workers-ai"
-    assert result.prompt_version == "cloudflare-humanize-v6"
+    assert result.prompt_version == "cloudflare-humanize-v8"
 
 
 def test_cloudflare_provider_rejects_claim_inflation() -> None:
@@ -302,9 +302,9 @@ def test_cloudflare_provider_repairs_rejected_rewrite_once() -> None:
             assert "hands-on experience" in repair_prompt
 
             rewritten_text = (
-                "Across RAG and agentic workflows, I have "
-                "hands-on experience designing generative "
-                "AI systems."
+                "Across RAG and agentic workflows, I design "
+                "generative AI systems. That work draws on "
+                "my hands-on experience."
             )
 
         return httpx.Response(
@@ -353,7 +353,7 @@ def test_cloudflare_provider_repairs_rejected_rewrite_once() -> None:
         "generative AI systems across RAG and "
         "agentic workflows."
     )
-    assert result.prompt_version == "cloudflare-humanize-v6"
+    assert result.prompt_version == "cloudflare-humanize-v8"
     assert "hands-on experience" in result.text
     assert "developed expertise" not in result.text
     assert len(result.changes) == 1
@@ -502,6 +502,69 @@ def test_cloudflare_provider_rejects_no_op_deep_repair() -> None:
     with pytest.raises(
         RewriteProviderResponseError,
         match="useful-distance validation",
+    ):
+        provider.rewrite(
+            RewriteRequest(
+                text=source_text,
+                document_type="professional_email",
+                audience="technical hiring team",
+                tone="natural and professional",
+                intensity="deep_reconstruction",
+            )
+        )
+
+    assert request_count == 2
+
+
+def test_cloudflare_provider_rejects_repair_that_ignores_blueprint() -> None:
+    request_count = 0
+    source_text = (
+        "I have hands-on experience designing generative AI systems. "
+        "In my current role, I combine retrieval, reranking, and "
+        "human oversight."
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+
+        rewritten_text = (
+            "I developed expertise designing generative AI systems. "
+            "In my current role, I combine retrieval, reranking, and "
+            "human oversight."
+            if request_count == 1
+            else (
+                "I have hands-on experience designing generative AI "
+                "systems, which in my current role involves combining "
+                "retrieval, reranking, and human oversight."
+            )
+        )
+
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "errors": [],
+                "messages": [],
+                "result": {
+                    "response": json.dumps(
+                        {
+                            "rewritten_text": rewritten_text,
+                        }
+                    )
+                },
+            },
+        )
+
+    provider = CloudflareWorkersAIProvider(
+        account_id="test-account",
+        api_token="test-token",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(
+        RewriteProviderResponseError,
+        match="structural-blueprint validation",
     ):
         provider.rewrite(
             RewriteRequest(

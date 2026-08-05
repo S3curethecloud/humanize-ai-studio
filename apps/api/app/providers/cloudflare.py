@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from time import perf_counter
 from typing import Any
 
@@ -14,7 +15,10 @@ from app.providers.exceptions import (
     RewriteProviderResponseError,
     RewriteProviderTransportError,
 )
-from app.providers.rewrite_distance import evaluate_rewrite_distance
+from app.providers.rewrite_distance import (
+    evaluate_rewrite_distance,
+    follows_deep_repair_blueprint,
+)
 
 REWRITE_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "json_schema",
@@ -245,6 +249,19 @@ class CloudflareWorkersAIProvider:
                     f"{repair_distance.rewritten_sentence_count}"
                 )
 
+            if (
+                request.intensity.value == "deep_reconstruction"
+                and not follows_deep_repair_blueprint(
+                    source_text=request.text,
+                    rewritten_text=repaired_text,
+                )
+            ):
+                raise RewriteProviderResponseError(
+                    "Cloudflare repair failed structural-blueprint "
+                    "validation: the repaired output did not visibly "
+                    "apply the required information-order operation."
+                )
+
             rewritten_text = repaired_text
             usage = _merge_usage(
                 usage,
@@ -274,7 +291,7 @@ class CloudflareWorkersAIProvider:
             changes=changes,
             provider_name=self.provider_name,
             model_name=self._model_name,
-            prompt_version="cloudflare-humanize-v6",
+            prompt_version="cloudflare-humanize-v8",
             latency_ms=round((perf_counter() - started_at) * 1000, 3),
             primary_provider_name=self.provider_name,
             fallback_used=False,
@@ -352,6 +369,42 @@ class CloudflareWorkersAIProvider:
         )
 
     @staticmethod
+    def _structural_repair_blueprint(
+        request: RewriteRequest,
+    ) -> str:
+        if request.intensity.value != "deep_reconstruction":
+            return (
+                "Make a clear lexical or structural improvement "
+                "appropriate to the requested intensity."
+            )
+
+        sentence_count = len(
+            [
+                segment
+                for segment in re.split(
+                    r"[.!?]+",
+                    request.text,
+                )
+                if segment.strip()
+            ]
+        )
+
+        if sentence_count >= 2:
+            return (
+                "Use this required structural operation: begin with "
+                "the main idea from the final source sentence, then "
+                "incorporate the earlier sentence content afterward. "
+                "Do not preserve the source sentence order."
+            )
+
+        return (
+            "Use this required structural operation: split the source "
+            "into at least two sentences and move the latter major "
+            "clause or idea before the opening material. Do not preserve "
+            "the original clause order."
+        )
+
+    @staticmethod
     def _repair_prompt(
         *,
         request: RewriteRequest,
@@ -364,6 +417,7 @@ class CloudflareWorkersAIProvider:
             if required_phrases
             else "- None"
         )
+        structural_blueprint = CloudflareWorkersAIProvider._structural_repair_blueprint(request)
 
         return (
             "The previous rewrite was rejected by deterministic "
@@ -374,6 +428,8 @@ class CloudflareWorkersAIProvider:
             f"{violation_summary}\n\n"
             "REQUIRED VERBATIM PHRASES:\n"
             f"{required_phrase_block}\n\n"
+            "REQUIRED STRUCTURAL BLUEPRINT:\n"
+            f"{structural_blueprint}\n\n"
             "MANDATORY REPAIR RULES:\n"
             "- Every phrase listed under REQUIRED VERBATIM PHRASES must appear "
             "exactly, with the same words and hyphenation, in the rewrite.\n"
@@ -395,6 +451,8 @@ class CloudflareWorkersAIProvider:
             "every claim and required phrase.\n"
             "- A narrow synonym substitution or phrase replacement is not a "
             "deep reconstruction.\n"
+            "- Apply the REQUIRED STRUCTURAL BLUEPRINT visibly. Returning the "
+            "original sentence and clause order is not acceptable.\n"
             "- Do not return commentary, explanations, headings, or notes.\n"
             "- Return only the structured response required by the schema.\n\n"
             "SOURCE TEXT:\n"

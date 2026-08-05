@@ -110,3 +110,47 @@ def test_light_edit_accepts_small_textual_change() -> None:
     )
 
     assert result.acceptable is True
+
+
+def test_blueprint_accepts_final_sentence_idea_first() -> None:
+    from app.providers.rewrite_distance import (
+        follows_deep_repair_blueprint,
+    )
+
+    source = (
+        "I have hands-on experience designing generative AI systems. "
+        "In my current role, I combine retrieval, reranking, and "
+        "human oversight."
+    )
+    rewritten = (
+        "In my current role, I combine retrieval, reranking, and "
+        "human oversight. That work draws on my hands-on experience "
+        "designing generative AI systems."
+    )
+
+    assert follows_deep_repair_blueprint(
+        source_text=source,
+        rewritten_text=rewritten,
+    )
+
+
+def test_blueprint_rejects_original_information_order() -> None:
+    from app.providers.rewrite_distance import (
+        follows_deep_repair_blueprint,
+    )
+
+    source = (
+        "I have hands-on experience designing generative AI systems. "
+        "In my current role, I combine retrieval, reranking, and "
+        "human oversight."
+    )
+    rewritten = (
+        "I have hands-on experience designing generative AI systems, "
+        "which in my current role involves combining retrieval, "
+        "reranking, and human oversight."
+    )
+
+    assert not follows_deep_repair_blueprint(
+        source_text=source,
+        rewritten_text=rewritten,
+    )
