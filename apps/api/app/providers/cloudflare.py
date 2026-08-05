@@ -59,6 +59,32 @@ class CloudflareWorkersAIProvider:
     def provider_name(self) -> str:
         return "cloudflare-workers-ai"
 
+    def _post_payload(
+        self,
+        *,
+        endpoint: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> httpx.Response:
+        try:
+            if self._client is not None:
+                return self._client.post(
+                    endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=self._timeout_seconds,
+                )
+
+            with httpx.Client() as client:
+                return client.post(
+                    endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=self._timeout_seconds,
+                )
+        except httpx.HTTPError as exc:
+            raise RewriteProviderTransportError("Cloudflare Workers AI request failed.") from exc
+
     def rewrite(self, request: RewriteRequest) -> RewriteProviderResult:
         started_at = perf_counter()
 
@@ -88,24 +114,11 @@ class CloudflareWorkersAIProvider:
             "Content-Type": "application/json",
         }
 
-        try:
-            if self._client is not None:
-                response = self._client.post(
-                    endpoint,
-                    headers=headers,
-                    json=payload,
-                    timeout=self._timeout_seconds,
-                )
-            else:
-                with httpx.Client() as client:
-                    response = client.post(
-                        endpoint,
-                        headers=headers,
-                        json=payload,
-                        timeout=self._timeout_seconds,
-                    )
-        except httpx.HTTPError as exc:
-            raise RewriteProviderTransportError("Cloudflare Workers AI request failed.") from exc
+        response = self._post_payload(
+            endpoint=endpoint,
+            headers=headers,
+            payload=payload,
+        )
 
         if response.is_error:
             raise RewriteProviderResponseError(
@@ -125,6 +138,7 @@ class CloudflareWorkersAIProvider:
         generated_output = _extract_generated_output(response_body)
         rewritten_text = _parse_rewritten_text(generated_output)
         usage = _extract_usage(response_body)
+        repair_used = False
 
         integrity_violations = find_claim_integrity_violations(
             source_text=request.text,
@@ -132,13 +146,87 @@ class CloudflareWorkersAIProvider:
         )
 
         if integrity_violations:
-            violation_summary = "; ".join(
-                (f"{violation.rule_id}: {violation.phrase!r}") for violation in integrity_violations
+            violation_summary = "\n".join(
+                (f"- {violation.rule_id}: {violation.phrase!r} — {violation.description}")
+                for violation in integrity_violations
             )
 
-            raise RewriteProviderResponseError(
-                f"Cloudflare rewrite failed claim-integrity validation: {violation_summary}"
+            required_phrases = tuple(
+                dict.fromkeys(
+                    violation.phrase
+                    for violation in integrity_violations
+                    if violation.rule_id == "qualification_removed"
+                )
             )
+
+            repair_payload = {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": self._system_prompt(),
+                    },
+                    {
+                        "role": "user",
+                        "content": self._repair_prompt(
+                            request=request,
+                            rejected_text=rewritten_text,
+                            violation_summary=violation_summary,
+                            required_phrases=required_phrases,
+                        ),
+                    },
+                ],
+                "response_format": REWRITE_RESPONSE_SCHEMA,
+                "temperature": 0.0,
+                "max_tokens": 4096,
+            }
+
+            repair_response = self._post_payload(
+                endpoint=endpoint,
+                headers=headers,
+                payload=repair_payload,
+            )
+
+            if repair_response.is_error:
+                raise RewriteProviderResponseError(
+                    "Cloudflare Workers AI repair returned "
+                    f"HTTP {repair_response.status_code}: "
+                    f"{_safe_error_detail(repair_response)}"
+                )
+
+            repair_body = _parse_json_object(repair_response)
+
+            if repair_body.get("success") is not True:
+                errors = repair_body.get("errors", [])
+
+                raise RewriteProviderResponseError(
+                    f"Cloudflare Workers AI repair reported failure: {errors!r}"
+                )
+
+            repair_output = _extract_generated_output(repair_body)
+            repaired_text = _parse_rewritten_text(repair_output)
+            repair_usage = _extract_usage(repair_body)
+
+            repaired_violations = find_claim_integrity_violations(
+                source_text=request.text,
+                rewritten_text=repaired_text,
+            )
+
+            if repaired_violations:
+                repaired_summary = "; ".join(
+                    (f"{violation.rule_id}: {violation.phrase!r}")
+                    for violation in repaired_violations
+                )
+
+                raise RewriteProviderResponseError(
+                    f"Cloudflare repair failed claim-integrity validation: {repaired_summary}"
+                )
+
+            rewritten_text = repaired_text
+            usage = _merge_usage(
+                usage,
+                repair_usage,
+            )
+            repair_used = True
 
         changes: list[RewriteChange] = []
 
@@ -150,7 +238,8 @@ class CloudflareWorkersAIProvider:
                     replacement=rewritten_text,
                     reason=(
                         "Cloudflare Workers AI reconstructed the draft using "
-                        "the requested audience, tone, and rewrite intensity."
+                        "the requested audience, tone, and rewrite intensity"
+                        + (", followed by one policy-constrained repair." if repair_used else ".")
                     ),
                     change_type="model_reconstruction",
                 )
@@ -161,7 +250,7 @@ class CloudflareWorkersAIProvider:
             changes=changes,
             provider_name=self.provider_name,
             model_name=self._model_name,
-            prompt_version="cloudflare-humanize-v3",
+            prompt_version="cloudflare-humanize-v4",
             latency_ms=round((perf_counter() - started_at) * 1000, 3),
             primary_provider_name=self.provider_name,
             fallback_used=False,
@@ -239,6 +328,47 @@ class CloudflareWorkersAIProvider:
         )
 
     @staticmethod
+    def _repair_prompt(
+        *,
+        request: RewriteRequest,
+        rejected_text: str,
+        violation_summary: str,
+        required_phrases: tuple[str, ...],
+    ) -> str:
+        required_phrase_block = (
+            "\n".join(f"- {phrase}" for phrase in required_phrases)
+            if required_phrases
+            else "- None"
+        )
+
+        return (
+            "The previous rewrite was rejected by deterministic "
+            "claim-integrity validation. Regenerate the rewrite exactly once. "
+            "Correct every listed violation while preserving all valid "
+            "structural and stylistic improvements.\n\n"
+            "REJECTED VIOLATIONS:\n"
+            f"{violation_summary}\n\n"
+            "REQUIRED VERBATIM PHRASES:\n"
+            f"{required_phrase_block}\n\n"
+            "MANDATORY REPAIR RULES:\n"
+            "- Every phrase listed under REQUIRED VERBATIM PHRASES must appear "
+            "exactly, with the same words and hyphenation, in the rewrite.\n"
+            "- Preserve every protected qualification explicitly.\n"
+            "- Restore any qualification or participation boundary removed "
+            "from the source.\n"
+            "- Remove every unsupported expertise, ownership, seniority, "
+            "scope, certainty, and impact claim.\n"
+            "- Remove promotional filler and invented outcomes.\n"
+            "- Do not copy the rejected wording when it caused a violation.\n"
+            "- Do not return commentary, explanations, headings, or notes.\n"
+            "- Return only the structured response required by the schema.\n\n"
+            "SOURCE TEXT:\n"
+            f"{request.text}\n\n"
+            "REJECTED REWRITE:\n"
+            f"{rejected_text}"
+        )
+
+    @staticmethod
     def _user_prompt(request: RewriteRequest) -> str:
         return (
             f"Document type: {request.document_type.value}\n"
@@ -283,6 +413,36 @@ def _extract_usage(response_body: dict[str, Any]) -> ProviderUsage:
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )
+
+
+def _merge_usage(
+    first: ProviderUsage,
+    second: ProviderUsage,
+) -> ProviderUsage:
+    return ProviderUsage(
+        input_tokens=_sum_optional_values(
+            first.input_tokens,
+            second.input_tokens,
+        ),
+        output_tokens=_sum_optional_values(
+            first.output_tokens,
+            second.output_tokens,
+        ),
+        total_tokens=_sum_optional_values(
+            first.total_tokens,
+            second.total_tokens,
+        ),
+    )
+
+
+def _sum_optional_values(
+    first: int | None,
+    second: int | None,
+) -> int | None:
+    if first is None and second is None:
+        return None
+
+    return (first or 0) + (second or 0)
 
 
 def _optional_non_negative_integer(value: Any) -> int | None:

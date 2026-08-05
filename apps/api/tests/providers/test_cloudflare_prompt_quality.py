@@ -66,4 +66,4 @@ def test_system_prompt_defines_all_rewrite_distances() -> None:
 def test_prompt_version_is_incremented() -> None:
     provider_source = Path("app/providers/cloudflare.py").read_text(encoding="utf-8")
 
-    assert 'prompt_version="cloudflare-humanize-v3"' in provider_source
+    assert 'prompt_version="cloudflare-humanize-v4"' in provider_source
