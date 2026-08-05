@@ -1,0 +1,202 @@
+{
+  "corpus": {
+    "case_count": 7,
+    "case_ids": [
+      "light-edit-direct-success",
+      "natural-rewrite-direct-success",
+      "deep-direct-structural-success",
+      "deep-repair-success",
+      "repair-claim-integrity-fallback",
+      "repair-useful-distance-fallback",
+      "repair-blueprint-fallback"
+    ],
+    "name": "default-deterministic-quality-corpus",
+    "performance_case_count": 4,
+    "safety_control_case_count": 3
+  },
+  "generated_at": "2026-08-05T03:41:03.776492+00:00",
+  "overall_summary": {
+    "claim_integrity_rejection_count": 1,
+    "claim_integrity_rejection_rate": 0.14285714285714285,
+    "deep_structural_failure_release_count": 0,
+    "fallback_count": 3,
+    "fallback_rate": 0.42857142857142855,
+    "maximum_observed_model_call_count": 2,
+    "provider_response_rejection_count": 0,
+    "provider_success_count": 4,
+    "provider_success_rate": 0.5714285714285714,
+    "provider_transport_rejection_count": 0,
+    "release_gate": {
+      "failures": [
+        "provider_success_rate 0.5714 is below 0.7000",
+        "repair_success_rate 0.2500 is below 0.5000",
+        "fallback_rate 0.4286 exceeds 0.3000"
+      ],
+      "passed": false
+    },
+    "repair_attempt_count": 4,
+    "repair_attempt_rate": 0.5714285714285714,
+    "repair_success_count": 1,
+    "repair_success_rate": 0.25,
+    "structural_blueprint_rejection_count": 1,
+    "structural_blueprint_rejection_rate": 0.14285714285714285,
+    "total_cases": 7,
+    "unsafe_output_release_count": 0,
+    "useful_distance_rejection_count": 1,
+    "useful_distance_rejection_rate": 0.14285714285714285
+  },
+  "performance_summary": {
+    "claim_integrity_rejection_count": 0,
+    "claim_integrity_rejection_rate": 0.0,
+    "deep_structural_failure_release_count": 0,
+    "fallback_count": 0,
+    "fallback_rate": 0.0,
+    "maximum_observed_model_call_count": 2,
+    "provider_response_rejection_count": 0,
+    "provider_success_count": 4,
+    "provider_success_rate": 1.0,
+    "provider_transport_rejection_count": 0,
+    "release_gate": {
+      "failures": [],
+      "passed": true
+    },
+    "repair_attempt_count": 1,
+    "repair_attempt_rate": 0.25,
+    "repair_success_count": 1,
+    "repair_success_rate": 1.0,
+    "structural_blueprint_rejection_count": 0,
+    "structural_blueprint_rejection_rate": 0.0,
+    "total_cases": 4,
+    "unsafe_output_release_count": 0,
+    "useful_distance_rejection_count": 0,
+    "useful_distance_rejection_rate": 0.0
+  },
+  "release_gate": {
+    "failures": [],
+    "passed": true
+  },
+  "results": [
+    {
+      "case_id": "light-edit-direct-success",
+      "claim_integrity_preserved": true,
+      "cohort": "performance",
+      "fallback_used": false,
+      "intensity": "light_edit",
+      "model_call_count": 1,
+      "provider_succeeded": true,
+      "rejection_category": "none",
+      "repair_attempted": false,
+      "repair_succeeded": false,
+      "structural_blueprint_satisfied": true,
+      "unsafe_output_released": false,
+      "useful_distance_satisfied": true
+    },
+    {
+      "case_id": "natural-rewrite-direct-success",
+      "claim_integrity_preserved": true,
+      "cohort": "performance",
+      "fallback_used": false,
+      "intensity": "natural_rewrite",
+      "model_call_count": 1,
+      "provider_succeeded": true,
+      "rejection_category": "none",
+      "repair_attempted": false,
+      "repair_succeeded": false,
+      "structural_blueprint_satisfied": true,
+      "unsafe_output_released": false,
+      "useful_distance_satisfied": true
+    },
+    {
+      "case_id": "deep-direct-structural-success",
+      "claim_integrity_preserved": true,
+      "cohort": "performance",
+      "fallback_used": false,
+      "intensity": "deep_reconstruction",
+      "model_call_count": 1,
+      "provider_succeeded": true,
+      "rejection_category": "none",
+      "repair_attempted": false,
+      "repair_succeeded": false,
+      "structural_blueprint_satisfied": true,
+      "unsafe_output_released": false,
+      "useful_distance_satisfied": true
+    },
+    {
+      "case_id": "deep-repair-success",
+      "claim_integrity_preserved": true,
+      "cohort": "performance",
+      "fallback_used": false,
+      "intensity": "deep_reconstruction",
+      "model_call_count": 2,
+      "provider_succeeded": true,
+      "rejection_category": "none",
+      "repair_attempted": true,
+      "repair_succeeded": true,
+      "structural_blueprint_satisfied": true,
+      "unsafe_output_released": false,
+      "useful_distance_satisfied": true
+    },
+    {
+      "case_id": "repair-claim-integrity-fallback",
+      "claim_integrity_preserved": false,
+      "cohort": "safety_control",
+      "fallback_used": true,
+      "intensity": "natural_rewrite",
+      "model_call_count": 2,
+      "provider_succeeded": false,
+      "rejection_category": "claim_integrity",
+      "repair_attempted": true,
+      "repair_succeeded": false,
+      "structural_blueprint_satisfied": true,
+      "unsafe_output_released": false,
+      "useful_distance_satisfied": false
+    },
+    {
+      "case_id": "repair-useful-distance-fallback",
+      "claim_integrity_preserved": true,
+      "cohort": "safety_control",
+      "fallback_used": true,
+      "intensity": "natural_rewrite",
+      "model_call_count": 2,
+      "provider_succeeded": false,
+      "rejection_category": "useful_distance",
+      "repair_attempted": true,
+      "repair_succeeded": false,
+      "structural_blueprint_satisfied": true,
+      "unsafe_output_released": false,
+      "useful_distance_satisfied": false
+    },
+    {
+      "case_id": "repair-blueprint-fallback",
+      "claim_integrity_preserved": true,
+      "cohort": "safety_control",
+      "fallback_used": true,
+      "intensity": "deep_reconstruction",
+      "model_call_count": 2,
+      "provider_succeeded": false,
+      "rejection_category": "structural_blueprint",
+      "repair_attempted": true,
+      "repair_succeeded": false,
+      "structural_blueprint_satisfied": false,
+      "unsafe_output_released": false,
+      "useful_distance_satisfied": true
+    }
+  ],
+  "safety_control_gate": {
+    "case_count": 3,
+    "controlled_fallback_count": 3,
+    "failures": [],
+    "maximum_observed_model_call_count": 2,
+    "passed": true,
+    "unsafe_output_release_count": 0
+  },
+  "schema_version": "humanize-evaluation-v2",
+  "thresholds": {
+    "maximum_deep_structural_failure_release_count": 0,
+    "maximum_fallback_rate": 0.3,
+    "maximum_model_call_count": 2,
+    "maximum_unsafe_output_release_count": 0,
+    "minimum_provider_success_rate": 0.7,
+    "minimum_repair_success_rate": 0.5
+  }
+}
