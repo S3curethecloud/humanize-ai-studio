@@ -56,7 +56,7 @@ def test_cloudflare_provider_returns_structured_result() -> None:
     assert result.text == "The team completed the migration in 30 days."
     assert result.provider_name == "cloudflare-workers-ai"
     assert result.model_name == "@cf/openai/gpt-oss-20b"
-    assert result.prompt_version == "cloudflare-humanize-v5"
+    assert result.prompt_version == "cloudflare-humanize-v6"
 
 
 def test_cloudflare_provider_rejects_non_json_model_output() -> None:
@@ -178,7 +178,7 @@ def test_cloudflare_provider_parses_chat_completions_response() -> None:
 
     assert result.text == "The team completed the migration in 30 days."
     assert result.provider_name == "cloudflare-workers-ai"
-    assert result.prompt_version == "cloudflare-humanize-v5"
+    assert result.prompt_version == "cloudflare-humanize-v6"
 
 
 def test_cloudflare_provider_rejects_claim_inflation() -> None:
@@ -353,7 +353,7 @@ def test_cloudflare_provider_repairs_rejected_rewrite_once() -> None:
         "generative AI systems across RAG and "
         "agentic workflows."
     )
-    assert result.prompt_version == "cloudflare-humanize-v5"
+    assert result.prompt_version == "cloudflare-humanize-v6"
     assert "hands-on experience" in result.text
     assert "developed expertise" not in result.text
     assert len(result.changes) == 1

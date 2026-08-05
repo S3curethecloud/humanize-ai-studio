@@ -236,7 +236,13 @@ class CloudflareWorkersAIProvider:
                     "similarity_ratio="
                     f"{repair_distance.similarity_ratio:.4f}; "
                     "changed_token_count="
-                    f"{repair_distance.changed_token_count}"
+                    f"{repair_distance.changed_token_count}; "
+                    "moved_token_count="
+                    f"{repair_distance.moved_token_count}; "
+                    "source_sentence_count="
+                    f"{repair_distance.source_sentence_count}; "
+                    "rewritten_sentence_count="
+                    f"{repair_distance.rewritten_sentence_count}"
                 )
 
             rewritten_text = repaired_text
@@ -268,7 +274,7 @@ class CloudflareWorkersAIProvider:
             changes=changes,
             provider_name=self.provider_name,
             model_name=self._model_name,
-            prompt_version="cloudflare-humanize-v5",
+            prompt_version="cloudflare-humanize-v6",
             latency_ms=round((perf_counter() - started_at) * 1000, 3),
             primary_provider_name=self.provider_name,
             fallback_used=False,
@@ -383,8 +389,12 @@ class CloudflareWorkersAIProvider:
             "- For moderate_rewrite or deep_reconstruction, make at least one "
             "clear structural or lexical improvement while preserving every "
             "claim and required phrase.\n"
-            "- For deep_reconstruction, reorganize sentence structure or "
-            "information order rather than merely changing punctuation.\n"
+            "- For deep_reconstruction, materially reorganize sentence "
+            "structure or information order. Move a clause, reorder major "
+            "ideas, split a sentence, or combine sentences while preserving "
+            "every claim and required phrase.\n"
+            "- A narrow synonym substitution or phrase replacement is not a "
+            "deep reconstruction.\n"
             "- Do not return commentary, explanations, headings, or notes.\n"
             "- Return only the structured response required by the schema.\n\n"
             "SOURCE TEXT:\n"

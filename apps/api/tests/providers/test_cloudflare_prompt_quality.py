@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.domain.models import RewriteRequest
 from app.providers.cloudflare import CloudflareWorkersAIProvider
 
 
@@ -66,4 +67,31 @@ def test_system_prompt_defines_all_rewrite_distances() -> None:
 def test_prompt_version_is_incremented() -> None:
     provider_source = Path("app/providers/cloudflare.py").read_text(encoding="utf-8")
 
-    assert 'prompt_version="cloudflare-humanize-v5"' in provider_source
+    assert 'prompt_version="cloudflare-humanize-v6"' in provider_source
+
+
+def test_repair_prompt_requires_structural_deep_reconstruction() -> None:
+    prompt = CloudflareWorkersAIProvider._repair_prompt(
+        request=RewriteRequest(
+            text=(
+                "I have hands-on experience designing "
+                "generative AI systems across RAG and "
+                "agentic workflows."
+            ),
+            document_type="professional_email",
+            audience="technical hiring team",
+            tone="natural and professional",
+            intensity="deep_reconstruction",
+        ),
+        rejected_text=(
+            "I have developed expertise in generative AI across RAG and agentic workflows."
+        ),
+        violation_summary=("- qualification_removed: 'hands-on experience'"),
+        required_phrases=("hands-on experience",),
+    )
+
+    assert "REQUIRED VERBATIM PHRASES" in prompt
+    assert "hands-on experience" in prompt
+    assert "materially reorganize sentence" in prompt
+    assert "Move a clause, reorder major ideas" in prompt
+    assert "narrow synonym substitution" in prompt

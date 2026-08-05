@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from app.domain.models import RewriteIntensity
 
 _TOKEN_PATTERN = re.compile(r"\b[\w'-]+\b")
+_SENTENCE_BOUNDARY_PATTERN = re.compile(r"[.!?]+")
+_MINIMUM_POSITION_SHIFT = 0.20
+_MINIMUM_DEEP_MOVED_TOKENS = 3
 
 
 @dataclass(frozen=True)
@@ -14,6 +18,9 @@ class RewriteDistanceResult:
     acceptable: bool
     similarity_ratio: float
     changed_token_count: int
+    moved_token_count: int
+    source_sentence_count: int
+    rewritten_sentence_count: int
     reason: str
 
 
@@ -36,41 +43,68 @@ def evaluate_rewrite_distance(
         source_text,
         rewritten_text,
     )
+    moved_token_count = _moved_token_count(
+        source_text,
+        rewritten_text,
+    )
+    source_sentence_count = _sentence_count(source_text)
+    rewritten_sentence_count = _sentence_count(rewritten_text)
+
+    def build_result(
+        *,
+        acceptable: bool,
+        reason: str,
+    ) -> RewriteDistanceResult:
+        return RewriteDistanceResult(
+            acceptable=acceptable,
+            similarity_ratio=similarity_ratio,
+            changed_token_count=changed_token_count,
+            moved_token_count=moved_token_count,
+            source_sentence_count=source_sentence_count,
+            rewritten_sentence_count=rewritten_sentence_count,
+            reason=reason,
+        )
 
     if normalized_source == normalized_rewrite:
-        return RewriteDistanceResult(
+        return build_result(
             acceptable=False,
-            similarity_ratio=similarity_ratio,
-            changed_token_count=0,
             reason="The rewrite is textually identical to the source.",
         )
 
     if intensity == RewriteIntensity.LIGHT_EDIT:
-        return RewriteDistanceResult(
+        return build_result(
             acceptable=True,
-            similarity_ratio=similarity_ratio,
-            changed_token_count=changed_token_count,
-            reason="Light polish produced a textual change.",
+            reason="The light edit produced a textual change.",
         )
 
-    minimum_changed_tokens = 1 if intensity == RewriteIntensity.NATURAL_REWRITE else 3
-
-    if changed_token_count < minimum_changed_tokens:
-        return RewriteDistanceResult(
+    if changed_token_count < 1:
+        return build_result(
             acceptable=False,
-            similarity_ratio=similarity_ratio,
-            changed_token_count=changed_token_count,
             reason=(
-                "The rewrite did not make enough lexical or structural "
-                "changes for the requested intensity."
+                "The rewrite did not make a meaningful lexical change for the requested intensity."
             ),
         )
 
-    return RewriteDistanceResult(
+    if intensity == RewriteIntensity.DEEP_RECONSTRUCTION:
+        sentence_structure_changed = source_sentence_count != rewritten_sentence_count
+        information_order_changed = moved_token_count >= _MINIMUM_DEEP_MOVED_TOKENS
+
+        if not (sentence_structure_changed or information_order_changed):
+            return build_result(
+                acceptable=False,
+                reason=(
+                    "The deep reconstruction changed wording "
+                    "without materially changing sentence "
+                    "structure or information order."
+                ),
+            )
+
+    return build_result(
         acceptable=True,
-        similarity_ratio=similarity_ratio,
-        changed_token_count=changed_token_count,
-        reason="The rewrite satisfied the minimum useful-distance contract.",
+        reason=(
+            "The rewrite satisfied the lexical and structural "
+            "distance contract for the requested intensity."
+        ),
     )
 
 
@@ -93,7 +127,13 @@ def _changed_token_count(
 
     changed = 0
 
-    for tag, source_start, source_end, rewrite_start, rewrite_end in matcher.get_opcodes():
+    for (
+        tag,
+        source_start,
+        source_end,
+        rewrite_start,
+        rewrite_end,
+    ) in matcher.get_opcodes():
         if tag == "equal":
             continue
 
@@ -103,6 +143,56 @@ def _changed_token_count(
         )
 
     return changed
+
+
+def _moved_token_count(
+    source_text: str,
+    rewritten_text: str,
+) -> int:
+    source_tokens = _tokens(source_text)
+    rewrite_tokens = _tokens(rewritten_text)
+
+    if len(source_tokens) < 2 or len(rewrite_tokens) < 2:
+        return 0
+
+    source_counts = Counter(source_tokens)
+    rewrite_counts = Counter(rewrite_tokens)
+
+    source_positions = {
+        token: index
+        for index, token in enumerate(source_tokens)
+        if source_counts[token] == 1 and rewrite_counts[token] == 1
+    }
+    rewrite_positions = {
+        token: index
+        for index, token in enumerate(rewrite_tokens)
+        if source_counts[token] == 1 and rewrite_counts[token] == 1
+    }
+
+    source_denominator = max(len(source_tokens) - 1, 1)
+    rewrite_denominator = max(len(rewrite_tokens) - 1, 1)
+
+    moved = 0
+
+    for token, source_index in source_positions.items():
+        rewrite_index = rewrite_positions.get(token)
+
+        if rewrite_index is None:
+            continue
+
+        source_position = source_index / source_denominator
+        rewrite_position = rewrite_index / rewrite_denominator
+
+        if abs(source_position - rewrite_position) >= _MINIMUM_POSITION_SHIFT:
+            moved += 1
+
+    return moved
+
+
+def _sentence_count(value: str) -> int:
+    segments = [segment for segment in _SENTENCE_BOUNDARY_PATTERN.split(value) if segment.strip()]
+
+    return max(len(segments), 1)
 
 
 def _tokens(value: str) -> tuple[str, ...]:
