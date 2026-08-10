@@ -71,3 +71,98 @@ class RewriteHistoryRecord(BaseModel):
     status: RewriteRecordStatus = RewriteRecordStatus.COMPLETED
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class VoiceProfileStatus(StrEnum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class VoiceFormality(StrEnum):
+    CASUAL = "casual"
+    BALANCED = "balanced"
+    FORMAL = "formal"
+
+
+class VoiceSentenceLength(StrEnum):
+    SHORT = "short"
+    MIXED = "mixed"
+    LONG = "long"
+
+
+class VoiceDirectness(StrEnum):
+    DIRECT = "direct"
+    BALANCED = "balanced"
+    INDIRECT = "indirect"
+
+
+class VoiceWarmth(StrEnum):
+    RESERVED = "reserved"
+    BALANCED = "balanced"
+    WARM = "warm"
+
+
+class VoiceConcision(StrEnum):
+    CONCISE = "concise"
+    BALANCED = "balanced"
+    EXPANSIVE = "expansive"
+
+
+class VoiceFirstPersonFrequency(StrEnum):
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+
+
+class VoiceContractionPreference(StrEnum):
+    AVOID = "avoid"
+    MIXED = "mixed"
+    PREFER = "prefer"
+
+
+class VoiceTransitionStyle(StrEnum):
+    MINIMAL = "minimal"
+    NATURAL = "natural"
+    EXPLICIT = "explicit"
+
+
+class VoiceStyleAttributes(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    formality: VoiceFormality = VoiceFormality.BALANCED
+    sentence_length: VoiceSentenceLength = VoiceSentenceLength.MIXED
+    directness: VoiceDirectness = VoiceDirectness.BALANCED
+    warmth: VoiceWarmth = VoiceWarmth.BALANCED
+    concision: VoiceConcision = VoiceConcision.BALANCED
+
+    first_person_frequency: VoiceFirstPersonFrequency = VoiceFirstPersonFrequency.MODERATE
+    contraction_preference: VoiceContractionPreference = VoiceContractionPreference.MIXED
+    transition_style: VoiceTransitionStyle = VoiceTransitionStyle.NATURAL
+
+
+class VoiceSourceSample(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    sample_id: str
+    text: str
+    label: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class VoiceProfileRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    profile_id: str
+    workspace_id: str
+    created_by_user_id: str
+
+    name: str
+    description: str | None = None
+
+    status: VoiceProfileStatus = VoiceProfileStatus.ACTIVE
+
+    source_samples: tuple[VoiceSourceSample, ...] = ()
+    style_attributes: VoiceStyleAttributes = Field(default_factory=VoiceStyleAttributes)
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

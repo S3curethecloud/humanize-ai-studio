@@ -5,6 +5,7 @@ from typing import Protocol
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     UserRecord,
+    VoiceProfileRecord,
     WorkspaceMembership,
     WorkspaceRecord,
 )
@@ -65,3 +66,27 @@ class RewriteHistoryRepository(Protocol):
         workspace_id: str,
         limit: int = 50,
     ) -> tuple[RewriteHistoryRecord, ...]: ...
+
+
+class VoiceProfileRepository(Protocol):
+    def create(
+        self,
+        profile: VoiceProfileRecord,
+    ) -> VoiceProfileRecord: ...
+
+    def get(
+        self,
+        profile_id: str,
+    ) -> VoiceProfileRecord | None: ...
+
+    def list_for_workspace(
+        self,
+        *,
+        workspace_id: str,
+        limit: int = 50,
+    ) -> tuple[VoiceProfileRecord, ...]: ...
+
+    def update(
+        self,
+        profile: VoiceProfileRecord,
+    ) -> VoiceProfileRecord: ...
