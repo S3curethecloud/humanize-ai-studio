@@ -13,6 +13,9 @@ from app.v2.repositories.interfaces import (
     UserRepository,
     WorkspaceRepository,
 )
+from app.v2.repositories.uow_interfaces import (
+    UnitOfWork,
+)
 
 
 class WorkspaceService:
@@ -22,10 +25,12 @@ class WorkspaceService:
         users: UserRepository,
         workspaces: WorkspaceRepository,
         memberships: MembershipRepository,
+        unit_of_work: UnitOfWork | None = None,
     ) -> None:
         self._users = users
         self._workspaces = workspaces
         self._memberships = memberships
+        self._unit_of_work = unit_of_work
 
     def create_user(
         self,
@@ -56,15 +61,22 @@ class WorkspaceService:
             name=name,
             created_by_user_id=user_id,
         )
-        workspace = self._workspaces.create(workspace)
 
-        self._memberships.create(
-            WorkspaceMembership(
-                workspace_id=(workspace.workspace_id),
-                user_id=user_id,
-                role=WorkspaceRole.OWNER,
-            )
+        membership = WorkspaceMembership(
+            workspace_id=workspace.workspace_id,
+            user_id=user_id,
+            role=WorkspaceRole.OWNER,
         )
+
+        if self._unit_of_work is not None:
+            with self._unit_of_work as uow:
+                uow.workspaces.create(workspace)
+                uow.memberships.create(membership)
+
+            return workspace
+
+        workspace = self._workspaces.create(workspace)
+        self._memberships.create(membership)
 
         return workspace
 

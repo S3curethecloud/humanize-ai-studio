@@ -5,10 +5,12 @@ from app.providers.registry import (
     build_rewrite_provider,
 )
 from app.v2.config.persistence import (
+    PersistenceBackend,
     V2PersistenceSettings,
 )
 from app.v2.repositories.factory import (
     build_repository_bundle,
+    build_unit_of_work,
 )
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
@@ -35,10 +37,16 @@ class V2Services:
 
         repositories = build_repository_bundle(resolved_persistence)
 
+        unit_of_work = None
+
+        if resolved_persistence.backend is PersistenceBackend.SQLITE:
+            unit_of_work = build_unit_of_work(resolved_persistence)
+
         self.workspace = WorkspaceService(
             users=repositories.users,
             workspaces=repositories.workspaces,
             memberships=repositories.memberships,
+            unit_of_work=unit_of_work,
         )
 
         self.history = RewriteHistoryService(
