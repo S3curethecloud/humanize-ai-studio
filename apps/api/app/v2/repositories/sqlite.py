@@ -8,6 +8,18 @@ from app.v2.domain.models import (
     RewriteHistoryRecord,
     RewriteRecordStatus,
     UserRecord,
+    VoiceConcision,
+    VoiceContractionPreference,
+    VoiceDirectness,
+    VoiceFirstPersonFrequency,
+    VoiceFormality,
+    VoiceProfileRecord,
+    VoiceProfileStatus,
+    VoiceSentenceLength,
+    VoiceSourceSample,
+    VoiceStyleAttributes,
+    VoiceTransitionStyle,
+    VoiceWarmth,
     WorkspaceMembership,
     WorkspaceRecord,
     WorkspaceRole,
@@ -100,6 +112,60 @@ def initialize_database(
             ON rewrite_history (
                 workspace_id,
                 created_at DESC
+            );
+
+            CREATE TABLE IF NOT EXISTS voice_profiles (
+                profile_id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                created_by_user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL,
+                formality TEXT NOT NULL,
+                sentence_length TEXT NOT NULL,
+                directness TEXT NOT NULL,
+                warmth TEXT NOT NULL,
+                concision TEXT NOT NULL,
+                first_person_frequency TEXT NOT NULL,
+                contraction_preference TEXT NOT NULL,
+                transition_style TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (
+                    workspace_id
+                )
+                REFERENCES workspaces(workspace_id),
+                FOREIGN KEY (
+                    created_by_user_id
+                )
+                REFERENCES users(user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS voice_source_samples (
+                sample_id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                label TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (
+                    profile_id
+                )
+                REFERENCES voice_profiles(profile_id)
+                ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS
+                idx_voice_profiles_workspace_updated
+            ON voice_profiles (
+                workspace_id,
+                updated_at DESC
+            );
+
+            CREATE INDEX IF NOT EXISTS
+                idx_voice_samples_profile
+            ON voice_source_samples (
+                profile_id,
+                created_at
             );
             """
         )
@@ -426,4 +492,305 @@ class SQLiteRewriteHistoryRepository:
             editorial_quality_decision=(row["editorial_quality_decision"]),
             status=RewriteRecordStatus(row["status"]),
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+
+class SQLiteVoiceProfileRepository:
+    def __init__(
+        self,
+        database_path: str | Path,
+    ) -> None:
+        self._database_path = database_path
+        initialize_database(database_path)
+
+    def create(
+        self,
+        profile: VoiceProfileRecord,
+    ) -> VoiceProfileRecord:
+        with _connect(self._database_path) as connection:
+            existing = connection.execute(
+                """
+                SELECT profile_id
+                FROM voice_profiles
+                WHERE profile_id = ?
+                """,
+                (profile.profile_id,),
+            ).fetchone()
+
+            if existing is not None:
+                raise ValueError(f"Voice profile already exists: {profile.profile_id}")
+
+            self._insert_profile(
+                connection,
+                profile,
+            )
+            self._insert_samples(
+                connection,
+                profile,
+            )
+
+        return profile
+
+    def get(
+        self,
+        profile_id: str,
+    ) -> VoiceProfileRecord | None:
+        with _connect(self._database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM voice_profiles
+                WHERE profile_id = ?
+                """,
+                (profile_id,),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            return self._to_record(
+                connection,
+                row,
+            )
+
+    def list_for_workspace(
+        self,
+        *,
+        workspace_id: str,
+        limit: int = 50,
+    ) -> tuple[VoiceProfileRecord, ...]:
+        with _connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM voice_profiles
+                WHERE workspace_id = ?
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (
+                    workspace_id,
+                    limit,
+                ),
+            ).fetchall()
+
+            return tuple(
+                self._to_record(
+                    connection,
+                    row,
+                )
+                for row in rows
+            )
+
+    def update(
+        self,
+        profile: VoiceProfileRecord,
+    ) -> VoiceProfileRecord:
+        with _connect(self._database_path) as connection:
+            existing = connection.execute(
+                """
+                SELECT
+                    profile_id,
+                    workspace_id
+                FROM voice_profiles
+                WHERE profile_id = ?
+                """,
+                (profile.profile_id,),
+            ).fetchone()
+
+            if existing is None:
+                raise ValueError(f"Unknown voice profile: {profile.profile_id}")
+
+            if existing["workspace_id"] != profile.workspace_id:
+                raise ValueError("Voice profile workspace cannot be changed.")
+
+            attributes = profile.style_attributes
+
+            connection.execute(
+                """
+                UPDATE voice_profiles
+                SET
+                    workspace_id = ?,
+                    created_by_user_id = ?,
+                    name = ?,
+                    description = ?,
+                    status = ?,
+                    formality = ?,
+                    sentence_length = ?,
+                    directness = ?,
+                    warmth = ?,
+                    concision = ?,
+                    first_person_frequency = ?,
+                    contraction_preference = ?,
+                    transition_style = ?,
+                    created_at = ?,
+                    updated_at = ?
+                WHERE profile_id = ?
+                """,
+                (
+                    profile.workspace_id,
+                    profile.created_by_user_id,
+                    profile.name,
+                    profile.description,
+                    profile.status.value,
+                    attributes.formality.value,
+                    attributes.sentence_length.value,
+                    attributes.directness.value,
+                    attributes.warmth.value,
+                    attributes.concision.value,
+                    attributes.first_person_frequency.value,
+                    attributes.contraction_preference.value,
+                    attributes.transition_style.value,
+                    profile.created_at.isoformat(),
+                    profile.updated_at.isoformat(),
+                    profile.profile_id,
+                ),
+            )
+
+            connection.execute(
+                """
+                DELETE FROM voice_source_samples
+                WHERE profile_id = ?
+                """,
+                (profile.profile_id,),
+            )
+
+            self._insert_samples(
+                connection,
+                profile,
+            )
+
+        return profile
+
+    def _insert_profile(
+        self,
+        connection: sqlite3.Connection,
+        profile: VoiceProfileRecord,
+    ) -> None:
+        attributes = profile.style_attributes
+
+        connection.execute(
+            """
+            INSERT INTO voice_profiles (
+                profile_id,
+                workspace_id,
+                created_by_user_id,
+                name,
+                description,
+                status,
+                formality,
+                sentence_length,
+                directness,
+                warmth,
+                concision,
+                first_person_frequency,
+                contraction_preference,
+                transition_style,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            (
+                profile.profile_id,
+                profile.workspace_id,
+                profile.created_by_user_id,
+                profile.name,
+                profile.description,
+                profile.status.value,
+                attributes.formality.value,
+                attributes.sentence_length.value,
+                attributes.directness.value,
+                attributes.warmth.value,
+                attributes.concision.value,
+                attributes.first_person_frequency.value,
+                attributes.contraction_preference.value,
+                attributes.transition_style.value,
+                profile.created_at.isoformat(),
+                profile.updated_at.isoformat(),
+            ),
+        )
+
+    def _insert_samples(
+        self,
+        connection: sqlite3.Connection,
+        profile: VoiceProfileRecord,
+    ) -> None:
+        connection.executemany(
+            """
+            INSERT INTO voice_source_samples (
+                sample_id,
+                profile_id,
+                text,
+                label,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    sample.sample_id,
+                    profile.profile_id,
+                    sample.text,
+                    sample.label,
+                    sample.created_at.isoformat(),
+                )
+                for sample in profile.source_samples
+            ),
+        )
+
+    def _to_record(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> VoiceProfileRecord:
+        sample_rows = connection.execute(
+            """
+            SELECT
+                sample_id,
+                text,
+                label,
+                created_at
+            FROM voice_source_samples
+            WHERE profile_id = ?
+            ORDER BY created_at, sample_id
+            """,
+            (row["profile_id"],),
+        ).fetchall()
+
+        samples = tuple(
+            VoiceSourceSample(
+                sample_id=sample["sample_id"],
+                text=sample["text"],
+                label=sample["label"],
+                created_at=datetime.fromisoformat(sample["created_at"]),
+            )
+            for sample in sample_rows
+        )
+
+        attributes = VoiceStyleAttributes(
+            formality=VoiceFormality(row["formality"]),
+            sentence_length=VoiceSentenceLength(row["sentence_length"]),
+            directness=VoiceDirectness(row["directness"]),
+            warmth=VoiceWarmth(row["warmth"]),
+            concision=VoiceConcision(row["concision"]),
+            first_person_frequency=(VoiceFirstPersonFrequency(row["first_person_frequency"])),
+            contraction_preference=(VoiceContractionPreference(row["contraction_preference"])),
+            transition_style=VoiceTransitionStyle(row["transition_style"]),
+        )
+
+        return VoiceProfileRecord(
+            profile_id=row["profile_id"],
+            workspace_id=row["workspace_id"],
+            created_by_user_id=(row["created_by_user_id"]),
+            name=row["name"],
+            description=row["description"],
+            status=VoiceProfileStatus(row["status"]),
+            source_samples=samples,
+            style_attributes=attributes,
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )
