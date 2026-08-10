@@ -9,6 +9,9 @@ from app.domain.models import (
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     UserRecord,
+    VoiceProfileRecord,
+    VoiceSourceSample,
+    VoiceStyleAttributes,
     WorkspaceRecord,
 )
 
@@ -62,3 +65,66 @@ class WorkspaceRewriteRequest(BaseModel):
 class WorkspaceRewriteResponse(BaseModel):
     rewrite: RewriteResponse
     history: RewriteHistoryRecord
+
+
+class CreateVoiceProfileRequest(BaseModel):
+    user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    name: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+    source_samples: tuple[
+        VoiceSourceSample,
+        ...,
+    ] = ()
+    style_attributes: VoiceStyleAttributes | None = None
+
+
+class VoiceProfileResponse(BaseModel):
+    profile: VoiceProfileRecord
+
+
+class VoiceProfileListResponse(BaseModel):
+    workspace_id: str
+    profiles: tuple[
+        VoiceProfileRecord,
+        ...,
+    ]
+
+
+class UpdateVoiceProfileRequest(BaseModel):
+    user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+    source_samples: (
+        tuple[
+            VoiceSourceSample,
+            ...,
+        ]
+        | None
+    ) = None
+    style_attributes: VoiceStyleAttributes | None = None
+
+
+class ArchiveVoiceProfileRequest(BaseModel):
+    user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )

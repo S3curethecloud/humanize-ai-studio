@@ -16,10 +16,15 @@ __all__ = [
 
 
 from app.v2.api.models import (
+    ArchiveVoiceProfileRequest,
     CreateUserRequest,
     CreateUserResponse,
+    CreateVoiceProfileRequest,
     CreateWorkspaceRequest,
     CreateWorkspaceResponse,
+    UpdateVoiceProfileRequest,
+    VoiceProfileListResponse,
+    VoiceProfileResponse,
     WorkspaceHistoryResponse,
     WorkspaceRewriteRequest,
     WorkspaceRewriteResponse,
@@ -130,4 +135,185 @@ def create_workspace_rewrite(
     return WorkspaceRewriteResponse(
         rewrite=result.response,
         history=result.history,
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/voice-profiles",
+    response_model=VoiceProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_voice_profile(
+    workspace_id: str,
+    request: CreateVoiceProfileRequest,
+) -> VoiceProfileResponse:
+    try:
+        profile = services.voice_profiles.create_profile(
+            workspace_id=workspace_id,
+            user_id=request.user_id,
+            name=request.name,
+            description=request.description,
+            source_samples=(request.source_samples),
+            style_attributes=(request.style_attributes),
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    return VoiceProfileResponse(
+        profile=profile,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/voice-profiles",
+    response_model=VoiceProfileListResponse,
+)
+def list_voice_profiles(
+    workspace_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=100,
+    ),
+) -> VoiceProfileListResponse:
+    try:
+        profiles = services.voice_profiles.list_profiles(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            limit=limit,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    return VoiceProfileListResponse(
+        workspace_id=workspace_id,
+        profiles=profiles,
+    )
+
+
+@router.get(
+    ("/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+    response_model=VoiceProfileResponse,
+)
+def get_voice_profile(
+    workspace_id: str,
+    profile_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> VoiceProfileResponse:
+    try:
+        profile = services.voice_profiles.get_profile(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            profile_id=profile_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return VoiceProfileResponse(
+        profile=profile,
+    )
+
+
+@router.patch(
+    ("/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+    response_model=VoiceProfileResponse,
+)
+def update_voice_profile(
+    workspace_id: str,
+    profile_id: str,
+    request: UpdateVoiceProfileRequest,
+) -> VoiceProfileResponse:
+    try:
+        existing = services.voice_profiles.get_profile(
+            workspace_id=workspace_id,
+            user_id=request.user_id,
+            profile_id=profile_id,
+        )
+
+        updates: dict[str, object] = {}
+
+        if "name" in request.model_fields_set:
+            updates["name"] = request.name
+
+        if "description" in request.model_fields_set:
+            updates["description"] = request.description
+
+        if "source_samples" in request.model_fields_set:
+            updates["source_samples"] = request.source_samples
+
+        if "style_attributes" in request.model_fields_set:
+            updates["style_attributes"] = request.style_attributes
+
+        candidate = existing.model_copy(update=updates)
+
+        profile = services.voice_profiles.update_profile(
+            workspace_id=workspace_id,
+            user_id=request.user_id,
+            profile=candidate,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return VoiceProfileResponse(
+        profile=profile,
+    )
+
+
+@router.post(
+    ("/workspaces/{workspace_id}/voice-profiles/{profile_id}/archive"),
+    response_model=VoiceProfileResponse,
+)
+def archive_voice_profile(
+    workspace_id: str,
+    profile_id: str,
+    request: ArchiveVoiceProfileRequest,
+) -> VoiceProfileResponse:
+    try:
+        profile = services.voice_profiles.archive_profile(
+            workspace_id=workspace_id,
+            user_id=request.user_id,
+            profile_id=profile_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return VoiceProfileResponse(
+        profile=profile,
     )
