@@ -1,0 +1,251 @@
+import pytest
+
+from app.domain.models import (
+    ReleaseDecision,
+)
+from app.services.fact_extractor import (
+    FactExtractor,
+)
+from app.services.verifier import (
+    RewriteVerifier,
+)
+from app.v2.api.dependencies import (
+    V2Services,
+)
+from app.v2.config.persistence import (
+    PersistenceBackend,
+    V2PersistenceSettings,
+)
+from app.v2.domain.models import (
+    VoiceConcision,
+    VoiceContractionPreference,
+    VoiceDirectness,
+    VoiceFirstPersonFrequency,
+    VoiceFormality,
+    VoiceSentenceLength,
+    VoiceStyleAttributes,
+    VoiceTransitionStyle,
+    VoiceWarmth,
+)
+from app.v2.domain.voice_rewrite import (
+    VoiceConstraintPriority,
+)
+from app.v2.services.voice_rewrite_guidance import (
+    VoiceRewriteGuidanceTranslator,
+)
+from app.workflows.rewrite_workflow import (
+    RewriteWorkflow,
+)
+
+
+def _services() -> V2Services:
+    return V2Services(
+        workflow=RewriteWorkflow(),
+        persistence_settings=V2PersistenceSettings(
+            backend=PersistenceBackend.MEMORY,
+            sqlite_path=None,
+            database_url=None,
+        ),
+    )
+
+
+def _create_profile(
+    services: V2Services,
+    *,
+    email: str = "owner@example.com",
+) -> tuple[str, str, str]:
+    user = services.workspace.create_user(
+        email=email,
+        display_name="Owner",
+    )
+
+    workspace = services.workspace.create_workspace(
+        user_id=user.user_id,
+        name="Voice Workspace",
+    )
+
+    profile = services.voice_profiles.create_profile(
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        name="Primary Voice",
+        style_attributes=VoiceStyleAttributes(
+            formality=VoiceFormality.FORMAL,
+            sentence_length=(VoiceSentenceLength.LONG),
+            directness=VoiceDirectness.DIRECT,
+            warmth=VoiceWarmth.WARM,
+            concision=VoiceConcision.EXPANSIVE,
+            first_person_frequency=(VoiceFirstPersonFrequency.HIGH),
+            contraction_preference=(VoiceContractionPreference.PREFER),
+            transition_style=(VoiceTransitionStyle.EXPLICIT),
+        ),
+    )
+
+    return (
+        user.user_id,
+        workspace.workspace_id,
+        profile.profile_id,
+    )
+
+
+def test_translator_emits_all_eight_voice_dimensions() -> None:
+    translator = VoiceRewriteGuidanceTranslator()
+
+    attributes = VoiceStyleAttributes(
+        formality=VoiceFormality.FORMAL,
+        sentence_length=VoiceSentenceLength.LONG,
+        directness=VoiceDirectness.DIRECT,
+        warmth=VoiceWarmth.WARM,
+        concision=VoiceConcision.EXPANSIVE,
+        first_person_frequency=(VoiceFirstPersonFrequency.HIGH),
+        contraction_preference=(VoiceContractionPreference.PREFER),
+        transition_style=(VoiceTransitionStyle.EXPLICIT),
+    )
+
+    result = translator.translate(
+        profile_id="voice_1",
+        workspace_id="workspace_1",
+        style_attributes=attributes,
+    )
+
+    assert result.guidance_version == ("voice-rewrite-guidance-v1")
+    assert len(result.instructions) == 8
+
+    assert {item.attribute for item in result.instructions} == {
+        "formality",
+        "sentence_length",
+        "directness",
+        "warmth",
+        "concision",
+        "first_person_frequency",
+        "contraction_preference",
+        "transition_style",
+    }
+
+
+def test_guidance_translation_is_deterministic() -> None:
+    translator = VoiceRewriteGuidanceTranslator()
+    attributes = VoiceStyleAttributes()
+
+    first = translator.translate(
+        profile_id="voice_1",
+        workspace_id="workspace_1",
+        style_attributes=attributes,
+    )
+    second = translator.translate(
+        profile_id="voice_1",
+        workspace_id="workspace_1",
+        style_attributes=attributes,
+    )
+
+    assert first == second
+
+
+def test_voice_guardrail_authority_order_is_fixed() -> None:
+    translator = VoiceRewriteGuidanceTranslator()
+
+    result = translator.translate(
+        profile_id="voice_1",
+        workspace_id="workspace_1",
+        style_attributes=VoiceStyleAttributes(),
+    )
+
+    guardrails = result.guardrails
+
+    assert guardrails.authority_order == (
+        VoiceConstraintPriority.FACTUAL_PRESERVATION,
+        VoiceConstraintPriority.REWRITE_REQUEST_CONSTRAINTS,
+        VoiceConstraintPriority.V1_VERIFICATION,
+        VoiceConstraintPriority.VOICE_MATCHING,
+    )
+
+    assert guardrails.factual_preservation_required is True
+    assert guardrails.rewrite_request_constraints_authoritative is True
+    assert guardrails.v1_verification_authoritative is True
+    assert guardrails.voice_can_add_claims is False
+    assert guardrails.voice_can_remove_claims is False
+    assert guardrails.voice_can_override_release_decision is False
+
+
+def test_guidance_requires_active_voice_profile() -> None:
+    services = _services()
+
+    user_id, workspace_id, profile_id = _create_profile(services)
+
+    services.voice_profiles.archive_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile_id=profile_id,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="active voice profile",
+    ):
+        services.voice_rewrite_guidance.build_guidance(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            profile_id=profile_id,
+        )
+
+
+def test_guidance_selection_preserves_workspace_authorization() -> None:
+    services = _services()
+
+    owner_id, workspace_id, profile_id = _create_profile(services)
+
+    outsider = services.workspace.create_user(
+        email="outsider@example.com",
+        display_name="Outsider",
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="not a member",
+    ):
+        services.voice_rewrite_guidance.build_guidance(
+            workspace_id=workspace_id,
+            user_id=outsider.user_id,
+            profile_id=profile_id,
+        )
+
+    guidance = services.voice_rewrite_guidance.build_guidance(
+        workspace_id=workspace_id,
+        user_id=owner_id,
+        profile_id=profile_id,
+    )
+
+    assert guidance.profile_id == profile_id
+    assert guidance.workspace_id == workspace_id
+
+
+def test_v1_fact_verification_remains_authoritative() -> None:
+    services = _services()
+
+    user_id, workspace_id, profile_id = _create_profile(services)
+
+    guidance = services.voice_rewrite_guidance.build_guidance(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile_id=profile_id,
+    )
+
+    source = "Revenue was 42 million in 2025."
+    voice_matched_but_invalid_candidate = "Revenue was 43 million in 2026."
+
+    protected_facts = FactExtractor().extract(
+        source,
+        preserve_numbers=True,
+        preserve_dates=True,
+    )
+
+    verification = RewriteVerifier().verify(
+        source_text=source,
+        rewritten_text=(voice_matched_but_invalid_candidate),
+        protected_facts=protected_facts,
+    )
+
+    assert verification.decision is ReleaseDecision.FAIL
+    assert verification.missing_facts
+
+    assert guidance.guardrails.v1_verification_authoritative is True
+    assert guidance.guardrails.voice_can_override_release_decision is False

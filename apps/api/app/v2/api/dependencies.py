@@ -18,6 +18,9 @@ from app.v2.services.rewrite_history_service import (
 from app.v2.services.voice_profile_service import (
     VoiceProfileService,
 )
+from app.v2.services.voice_rewrite_guidance import (
+    VoiceRewriteGuidanceService,
+)
 from app.v2.services.workspace_rewrite_service import (
     WorkspaceRewriteService,
 )
@@ -60,6 +63,10 @@ class V2Services:
         self.voice_profiles = VoiceProfileService(
             workspace_service=self.workspace,
             profiles=repositories.voice_profiles,
+        )
+
+        self.voice_rewrite_guidance = VoiceRewriteGuidanceService(
+            voice_profiles=self.voice_profiles,
         )
 
         resolved_workflow = workflow
