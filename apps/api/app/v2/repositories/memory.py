@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     UserRecord,
+    VoiceProfileRecord,
     WorkspaceMembership,
     WorkspaceRecord,
 )
@@ -116,3 +117,60 @@ class InMemoryRewriteHistoryRepository:
         )
 
         return tuple(ordered[:limit])
+
+
+class InMemoryVoiceProfileRepository:
+    def __init__(self) -> None:
+        self._profiles: dict[
+            str,
+            VoiceProfileRecord,
+        ] = {}
+
+    def create(
+        self,
+        profile: VoiceProfileRecord,
+    ) -> VoiceProfileRecord:
+        if profile.profile_id in self._profiles:
+            raise ValueError(f"Voice profile already exists: {profile.profile_id}")
+
+        self._profiles[profile.profile_id] = profile
+        return profile
+
+    def get(
+        self,
+        profile_id: str,
+    ) -> VoiceProfileRecord | None:
+        return self._profiles.get(profile_id)
+
+    def list_for_workspace(
+        self,
+        *,
+        workspace_id: str,
+        limit: int = 50,
+    ) -> tuple[VoiceProfileRecord, ...]:
+        profiles = (
+            profile for profile in self._profiles.values() if profile.workspace_id == workspace_id
+        )
+
+        ordered = sorted(
+            profiles,
+            key=lambda profile: profile.updated_at,
+            reverse=True,
+        )
+
+        return tuple(ordered[:limit])
+
+    def update(
+        self,
+        profile: VoiceProfileRecord,
+    ) -> VoiceProfileRecord:
+        existing = self._profiles.get(profile.profile_id)
+
+        if existing is None:
+            raise ValueError(f"Unknown voice profile: {profile.profile_id}")
+
+        if existing.workspace_id != profile.workspace_id:
+            raise ValueError("Voice profile workspace cannot be changed.")
+
+        self._profiles[profile.profile_id] = profile
+        return profile
