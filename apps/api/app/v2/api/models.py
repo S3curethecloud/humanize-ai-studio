@@ -9,6 +9,7 @@ from app.domain.models import (
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     UserRecord,
+    VoiceAnalysisEvidence,
     VoiceProfileRecord,
     VoiceSourceSample,
     VoiceStyleAttributes,
@@ -128,3 +129,15 @@ class ArchiveVoiceProfileRequest(BaseModel):
         min_length=1,
         max_length=200,
     )
+
+
+class AnalyzeVoiceProfileRequest(BaseModel):
+    user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+
+class VoiceProfileAnalysisResponse(BaseModel):
+    profile: VoiceProfileRecord
+    evidence: VoiceAnalysisEvidence

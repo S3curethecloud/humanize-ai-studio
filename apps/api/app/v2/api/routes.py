@@ -16,6 +16,7 @@ __all__ = [
 
 
 from app.v2.api.models import (
+    AnalyzeVoiceProfileRequest,
     ArchiveVoiceProfileRequest,
     CreateUserRequest,
     CreateUserResponse,
@@ -23,6 +24,7 @@ from app.v2.api.models import (
     CreateWorkspaceRequest,
     CreateWorkspaceResponse,
     UpdateVoiceProfileRequest,
+    VoiceProfileAnalysisResponse,
     VoiceProfileListResponse,
     VoiceProfileResponse,
     WorkspaceHistoryResponse,
@@ -316,4 +318,53 @@ def archive_voice_profile(
 
     return VoiceProfileResponse(
         profile=profile,
+    )
+
+
+@router.post(
+    ("/workspaces/{workspace_id}/voice-profiles/{profile_id}/analyze"),
+    response_model=VoiceProfileAnalysisResponse,
+)
+def analyze_voice_profile(
+    workspace_id: str,
+    profile_id: str,
+    request: AnalyzeVoiceProfileRequest,
+) -> VoiceProfileAnalysisResponse:
+    try:
+        services.voice_profiles.get_profile(
+            workspace_id=workspace_id,
+            user_id=request.user_id,
+            profile_id=profile_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        result = services.voice_profiles.analyze_profile(
+            workspace_id=workspace_id,
+            user_id=request.user_id,
+            profile_id=profile_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
+            detail=str(exc),
+        ) from exc
+
+    return VoiceProfileAnalysisResponse(
+        profile=result.profile,
+        evidence=result.evidence,
     )
