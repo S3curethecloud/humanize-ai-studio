@@ -15,6 +15,9 @@ from app.v2.repositories.factory import (
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
+from app.v2.services.voice_profile_service import (
+    VoiceProfileService,
+)
 from app.v2.services.workspace_rewrite_service import (
     WorkspaceRewriteService,
 )
@@ -52,6 +55,11 @@ class V2Services:
         self.history = RewriteHistoryService(
             workspace_service=self.workspace,
             history=repositories.history,
+        )
+
+        self.voice_profiles = VoiceProfileService(
+            workspace_service=self.workspace,
+            profiles=repositories.voice_profiles,
         )
 
         resolved_workflow = workflow

@@ -10,18 +10,21 @@ from app.v2.repositories.interfaces import (
     MembershipRepository,
     RewriteHistoryRepository,
     UserRepository,
+    VoiceProfileRepository,
     WorkspaceRepository,
 )
 from app.v2.repositories.memory import (
     InMemoryMembershipRepository,
     InMemoryRewriteHistoryRepository,
     InMemoryUserRepository,
+    InMemoryVoiceProfileRepository,
     InMemoryWorkspaceRepository,
 )
 from app.v2.repositories.sqlite import (
     SQLiteMembershipRepository,
     SQLiteRewriteHistoryRepository,
     SQLiteUserRepository,
+    SQLiteVoiceProfileRepository,
     SQLiteWorkspaceRepository,
 )
 from app.v2.repositories.unit_of_work import (
@@ -42,6 +45,7 @@ class RepositoryBundle:
     workspaces: WorkspaceRepository
     memberships: MembershipRepository
     history: RewriteHistoryRepository
+    voice_profiles: VoiceProfileRepository
 
 
 def build_repository_bundle(
@@ -53,6 +57,7 @@ def build_repository_bundle(
             workspaces=(InMemoryWorkspaceRepository()),
             memberships=(InMemoryMembershipRepository()),
             history=(InMemoryRewriteHistoryRepository()),
+            voice_profiles=(InMemoryVoiceProfileRepository()),
         )
 
     if settings.backend is PersistenceBackend.SQLITE:
@@ -64,6 +69,7 @@ def build_repository_bundle(
             workspaces=SQLiteWorkspaceRepository(settings.sqlite_path),
             memberships=(SQLiteMembershipRepository(settings.sqlite_path)),
             history=(SQLiteRewriteHistoryRepository(settings.sqlite_path)),
+            voice_profiles=(SQLiteVoiceProfileRepository(settings.sqlite_path)),
         )
 
     raise ExternalPersistenceUnavailableError(
