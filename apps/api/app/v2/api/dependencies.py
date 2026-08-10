@@ -4,11 +4,11 @@ from app.core.settings import Settings
 from app.providers.registry import (
     build_rewrite_provider,
 )
-from app.v2.repositories.memory import (
-    InMemoryMembershipRepository,
-    InMemoryRewriteHistoryRepository,
-    InMemoryUserRepository,
-    InMemoryWorkspaceRepository,
+from app.v2.config.persistence import (
+    V2PersistenceSettings,
+)
+from app.v2.repositories.factory import (
+    build_repository_bundle,
 )
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
@@ -29,21 +29,21 @@ class V2Services:
         self,
         *,
         workflow: RewriteWorkflow | None = None,
+        persistence_settings: (V2PersistenceSettings | None) = None,
     ) -> None:
-        users = InMemoryUserRepository()
-        workspaces = InMemoryWorkspaceRepository()
-        memberships = InMemoryMembershipRepository()
-        history = InMemoryRewriteHistoryRepository()
+        resolved_persistence = persistence_settings or V2PersistenceSettings.from_environment()
+
+        repositories = build_repository_bundle(resolved_persistence)
 
         self.workspace = WorkspaceService(
-            users=users,
-            workspaces=workspaces,
-            memberships=memberships,
+            users=repositories.users,
+            workspaces=repositories.workspaces,
+            memberships=repositories.memberships,
         )
 
         self.history = RewriteHistoryService(
             workspace_service=self.workspace,
-            history=history,
+            history=repositories.history,
         )
 
         resolved_workflow = workflow
