@@ -166,3 +166,38 @@ class VoiceProfileRecord(BaseModel):
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class VoiceAnalysisSignal(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    attribute: str
+    inferred_value: str
+    metric_name: str
+    metric_value: float
+    rationale: str
+
+
+class VoiceAnalysisEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    analyzer_version: str = "voice-dna-v1"
+    sample_count: int
+    character_count: int
+    word_count: int
+    sentence_count: int
+    signals: tuple[VoiceAnalysisSignal, ...]
+
+
+class VoiceAnalysisResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    style_attributes: VoiceStyleAttributes
+    evidence: VoiceAnalysisEvidence
+
+
+class VoiceProfileAnalysisResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    profile: VoiceProfileRecord
+    evidence: VoiceAnalysisEvidence

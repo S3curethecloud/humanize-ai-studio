@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.v2.domain.models import (
+    VoiceProfileAnalysisResult,
     VoiceProfileRecord,
     VoiceProfileStatus,
     VoiceSourceSample,
@@ -11,6 +12,9 @@ from app.v2.domain.models import (
 )
 from app.v2.repositories.interfaces import (
     VoiceProfileRepository,
+)
+from app.v2.services.voice_dna_analyzer import (
+    VoiceDNAAnalyzer,
 )
 from app.v2.services.workspace_service import (
     WorkspaceService,
@@ -23,9 +27,11 @@ class VoiceProfileService:
         *,
         workspace_service: WorkspaceService,
         profiles: VoiceProfileRepository,
+        analyzer: VoiceDNAAnalyzer | None = None,
     ) -> None:
         self._workspace_service = workspace_service
         self._profiles = profiles
+        self._analyzer = analyzer if analyzer is not None else VoiceDNAAnalyzer()
 
     def create_profile(
         self,
@@ -138,6 +144,35 @@ class VoiceProfileService:
         )
 
         return self._profiles.update(updated)
+
+    def analyze_profile(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        profile_id: str,
+    ) -> VoiceProfileAnalysisResult:
+        profile = self.get_profile(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            profile_id=profile_id,
+        )
+
+        analysis = self._analyzer.analyze(profile.source_samples)
+
+        updated = profile.model_copy(
+            update={
+                "style_attributes": (analysis.style_attributes),
+                "updated_at": datetime.now(UTC),
+            }
+        )
+
+        persisted = self._profiles.update(updated)
+
+        return VoiceProfileAnalysisResult(
+            profile=persisted,
+            evidence=analysis.evidence,
+        )
 
     def archive_profile(
         self,
