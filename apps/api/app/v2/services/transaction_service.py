@@ -9,15 +9,15 @@ from app.v2.domain.models import (
     WorkspaceRecord,
     WorkspaceRole,
 )
-from app.v2.repositories.unit_of_work import (
-    SQLiteUnitOfWork,
+from app.v2.repositories.uow_interfaces import (
+    UnitOfWork,
 )
 
 
 class TransactionService:
     def __init__(
         self,
-        unit_of_work: SQLiteUnitOfWork,
+        unit_of_work: UnitOfWork,
     ) -> None:
         self._unit_of_work = unit_of_work
 
