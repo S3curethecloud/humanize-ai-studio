@@ -25,6 +25,7 @@ from app.v2.domain.models import (
     VoiceFirstPersonFrequency,
     VoiceFormality,
     VoiceSentenceLength,
+    VoiceSourceSample,
     VoiceStyleAttributes,
     VoiceTransitionStyle,
     VoiceWarmth,
@@ -143,6 +144,16 @@ def _create_profile(
         workspace_id=workspace.workspace_id,
         user_id=user.user_id,
         name="Primary Voice",
+        source_samples=(
+            VoiceSourceSample(
+                sample_id="sample_1",
+                text=(
+                    "I keep communication clear and practical. "
+                    "I explain the relevant context before the next step. "
+                    "I document the outcome so the decision is easy to follow."
+                ),
+            ),
+        ),
         style_attributes=VoiceStyleAttributes(
             formality=VoiceFormality.FORMAL,
             sentence_length=(VoiceSentenceLength.LONG),
@@ -154,6 +165,12 @@ def _create_profile(
             transition_style=(VoiceTransitionStyle.EXPLICIT),
         ),
     )
+
+    profile = services.voice_profiles.analyze_profile(
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        profile_id=profile.profile_id,
+    ).profile
 
     return (
         user.user_id,
@@ -206,15 +223,23 @@ def test_provider_injects_all_voice_dimensions_only_at_provider_boundary() -> No
 
     assert "VOICE DNA GUIDANCE" in (provider_request.tone)
 
+    analyzed_profile = services.voice_profiles.get_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile_id=profile_id,
+    )
+
+    attributes = analyzed_profile.style_attributes
+
     for expected in (
-        "formality=formal",
-        "sentence_length=long",
-        "directness=direct",
-        "warmth=warm",
-        "concision=expansive",
-        "first_person_frequency=high",
-        "contraction_preference=prefer",
-        "transition_style=explicit",
+        f"formality={attributes.formality.value}",
+        f"sentence_length={attributes.sentence_length.value}",
+        f"directness={attributes.directness.value}",
+        f"warmth={attributes.warmth.value}",
+        f"concision={attributes.concision.value}",
+        (f"first_person_frequency={attributes.first_person_frequency.value}"),
+        (f"contraction_preference={attributes.contraction_preference.value}"),
+        f"transition_style={attributes.transition_style.value}",
     ):
         assert expected in provider_request.tone
 

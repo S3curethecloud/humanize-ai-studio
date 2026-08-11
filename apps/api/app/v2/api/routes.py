@@ -13,6 +13,7 @@ from app.v2.services.voice_profile_service import (
     VoiceProfileLifecycleError,
 )
 from app.v2.services.voice_rewrite_guidance import (
+    VoiceProfileAnalysisRequiredError,
     VoiceProfileInactiveError,
 )
 
@@ -170,7 +171,10 @@ def create_workspace_rewrite(
             ),
         )
 
-    except VoiceProfileInactiveError as exc:
+    except (
+        VoiceProfileAnalysisRequiredError,
+        VoiceProfileInactiveError,
+    ) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),

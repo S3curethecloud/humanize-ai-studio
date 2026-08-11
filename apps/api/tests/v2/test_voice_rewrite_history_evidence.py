@@ -13,6 +13,7 @@ from app.v2.config.persistence import (
     PersistenceBackend,
     V2PersistenceSettings,
 )
+from app.v2.domain.models import VoiceSourceSample
 from app.v2.repositories.sqlite import (
     initialize_database,
 )
@@ -92,8 +93,25 @@ def _create_voice_rewrite(
         workspace_id=workspace.workspace_id,
         user_id=user.user_id,
         name="History Voice",
+        source_samples=(
+            VoiceSourceSample(
+                sample_id="history_sample_1",
+                text=(
+                    "I keep the message clear and practical. "
+                    "I explain the important context carefully. "
+                    "I document the result so the next action is obvious."
+                ),
+            ),
+        ),
     )
 
+    profile = services.voice_profiles.analyze_profile(
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        profile_id=profile.profile_id,
+    ).profile
+
+    assert profile.analysis_state.value == "current"
     assert services.voice_rewrite is not None
 
     result = services.voice_rewrite.execute(

@@ -23,6 +23,7 @@ from app.v2.domain.models import (
     VoiceFirstPersonFrequency,
     VoiceFormality,
     VoiceSentenceLength,
+    VoiceSourceSample,
     VoiceStyleAttributes,
     VoiceTransitionStyle,
     VoiceWarmth,
@@ -31,6 +32,7 @@ from app.v2.domain.voice_rewrite import (
     VoiceConstraintPriority,
 )
 from app.v2.services.voice_rewrite_guidance import (
+    VoiceProfileAnalysisRequiredError,
     VoiceRewriteGuidanceTranslator,
 )
 from app.workflows.rewrite_workflow import (
@@ -53,6 +55,7 @@ def _create_profile(
     services: V2Services,
     *,
     email: str = "owner@example.com",
+    analyzed: bool = True,
 ) -> tuple[str, str, str]:
     user = services.workspace.create_user(
         email=email,
@@ -68,6 +71,16 @@ def _create_profile(
         workspace_id=workspace.workspace_id,
         user_id=user.user_id,
         name="Primary Voice",
+        source_samples=(
+            VoiceSourceSample(
+                sample_id="sample_1",
+                text=(
+                    "I keep the message direct and practical. "
+                    "I explain the important context clearly. "
+                    "I document the outcome so the next step is obvious."
+                ),
+            ),
+        ),
         style_attributes=VoiceStyleAttributes(
             formality=VoiceFormality.FORMAL,
             sentence_length=(VoiceSentenceLength.LONG),
@@ -79,6 +92,13 @@ def _create_profile(
             transition_style=(VoiceTransitionStyle.EXPLICIT),
         ),
     )
+
+    if analyzed:
+        profile = services.voice_profiles.analyze_profile(
+            workspace_id=workspace.workspace_id,
+            user_id=user.user_id,
+            profile_id=profile.profile_id,
+        ).profile
 
     return (
         user.user_id,
@@ -249,3 +269,61 @@ def test_v1_fact_verification_remains_authoritative() -> None:
 
     assert guidance.guardrails.v1_verification_authoritative is True
     assert guidance.guardrails.voice_can_override_release_decision is False
+
+
+def test_guidance_rejects_never_analyzed_voice_profile() -> None:
+    services = _services()
+
+    user_id, workspace_id, profile_id = _create_profile(
+        services,
+        analyzed=False,
+    )
+
+    with pytest.raises(
+        VoiceProfileAnalysisRequiredError,
+        match="Analyze the voice profile before using it for rewrites",
+    ):
+        services.voice_rewrite_guidance.build_guidance(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            profile_id=profile_id,
+        )
+
+
+def test_guidance_rejects_stale_voice_profile() -> None:
+    services = _services()
+
+    user_id, workspace_id, profile_id = _create_profile(services)
+
+    analyzed = services.voice_profiles.get_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile_id=profile_id,
+    )
+
+    stale = services.voice_profiles.update_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile=analyzed.model_copy(
+            update={
+                "source_samples": (
+                    VoiceSourceSample(
+                        sample_id="sample_1",
+                        text=("This sample changed after the prior Voice DNA analysis."),
+                    ),
+                ),
+            }
+        ),
+    )
+
+    assert stale.analysis_state.value == "stale"
+
+    with pytest.raises(
+        VoiceProfileAnalysisRequiredError,
+        match="Re-analyze the voice profile before using it for rewrites",
+    ):
+        services.voice_rewrite_guidance.build_guidance(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            profile_id=profile_id,
+        )

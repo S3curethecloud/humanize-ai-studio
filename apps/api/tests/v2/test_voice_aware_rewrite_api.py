@@ -133,12 +133,23 @@ def _create_profile(
     *,
     workspace_id: str,
     user_id: str,
+    analyzed: bool = True,
 ) -> str:
     response = client.post(
         (f"/api/v2/workspaces/{workspace_id}/voice-profiles"),
         json={
             "user_id": user_id,
             "name": "Primary Voice",
+            "source_samples": [
+                {
+                    "sample_id": "sample_1",
+                    "text": (
+                        "I write clearly and keep the message practical. "
+                        "I explain the key context before the next step. "
+                        "I document the outcome so the decision is easy to follow."
+                    ),
+                }
+            ],
             "style_attributes": {
                 "formality": "formal",
                 "sentence_length": "long",
@@ -153,10 +164,24 @@ def _create_profile(
     )
 
     assert response.status_code == 201
-    return cast(
+
+    profile_id = cast(
         str,
         response.json()["profile"]["profile_id"],
     )
+
+    if analyzed:
+        analysis_response = client.post(
+            (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/analyze"),
+            json={
+                "user_id": user_id,
+            },
+        )
+
+        assert analysis_response.status_code == 200
+        assert analysis_response.json()["profile"]["analysis_state"] == "current"
+
+    return profile_id
 
 
 def _rewrite_payload(
@@ -240,9 +265,9 @@ def test_voice_profile_selection_applies_voice_guidance() -> None:
 
     provider_request = provider.requests[0]
 
-    assert "VOICE DNA GUIDANCE" in (provider_request.tone)
-    assert "formality=formal" in (provider_request.tone)
-    assert "transition_style=explicit" in (provider_request.tone)
+    assert "VOICE DNA GUIDANCE" in provider_request.tone
+    assert "formality=" in provider_request.tone
+    assert "transition_style=" in provider_request.tone
 
     assert set(response.json()) == {
         "rewrite",
@@ -427,6 +452,16 @@ def test_voice_evidence_matches_selected_profile() -> None:
         json={
             "user_id": user_id,
             "name": "Second Voice",
+            "source_samples": [
+                {
+                    "sample_id": "second_sample_1",
+                    "text": (
+                        "I keep communication concise and practical. "
+                        "I explain the relevant context clearly. "
+                        "I make the next action easy to understand."
+                    ),
+                }
+            ],
         },
     )
 
@@ -436,6 +471,16 @@ def test_voice_evidence_matches_selected_profile() -> None:
         str,
         second_response.json()["profile"]["profile_id"],
     )
+
+    analysis_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{second_profile_id}/analyze"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert analysis_response.status_code == 200
+    assert analysis_response.json()["profile"]["analysis_state"] == "current"
 
     response = client.post(
         f"/api/v2/workspaces/{workspace_id}/rewrites",
@@ -618,3 +663,76 @@ def test_non_voice_history_api_omits_voice_audit_fields() -> None:
 
     assert "voice_profile_id" not in record
     assert "voice_guidance_version" not in record
+
+
+def test_never_analyzed_voice_profile_returns_409_before_generation() -> None:
+    provider = RecordingProvider()
+    _configure(provider)
+
+    user_id = _create_user(
+        email="never-analyzed@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile_id = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        analyzed=False,
+    )
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=_rewrite_payload(
+            user_id=user_id,
+            voice_profile_id=profile_id,
+        ),
+    )
+
+    assert response.status_code == 409
+    assert "Analyze the voice profile" in response.json()["detail"]
+    assert provider.requests == []
+
+
+def test_stale_voice_profile_returns_409_before_generation() -> None:
+    provider = RecordingProvider()
+    _configure(provider)
+
+    user_id = _create_user(
+        email="stale-voice@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile_id = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    update_response = client.patch(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        json={
+            "user_id": user_id,
+            "source_samples": [
+                {
+                    "sample_id": "sample_1",
+                    "text": ("This source sample changed after the prior Voice DNA analysis."),
+                }
+            ],
+        },
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["profile"]["analysis_state"] == "stale"
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=_rewrite_payload(
+            user_id=user_id,
+            voice_profile_id=profile_id,
+        ),
+    )
+
+    assert response.status_code == 409
+    assert "Re-analyze the voice profile" in response.json()["detail"]
+    assert provider.requests == []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.v2.domain.models import (
+    VoiceAnalysisState,
     VoiceConcision,
     VoiceContractionPreference,
     VoiceDirectness,
@@ -107,6 +108,10 @@ class VoiceProfileInactiveError(ValueError):
     pass
 
 
+class VoiceProfileAnalysisRequiredError(ValueError):
+    pass
+
+
 class VoiceRewriteGuidanceTranslator:
     version = "voice-rewrite-guidance-v1"
 
@@ -208,6 +213,7 @@ class VoiceRewriteGuidanceService:
         )
 
         self._require_active_profile(profile)
+        self._require_current_analysis(profile)
 
         return self._translator.translate(
             profile_id=profile.profile_id,
@@ -222,4 +228,25 @@ class VoiceRewriteGuidanceService:
         if profile.status is not VoiceProfileStatus.ACTIVE:
             raise VoiceProfileInactiveError(
                 "Voice rewrite guidance requires an active voice profile."
+            )
+
+    def _require_current_analysis(
+        self,
+        profile: VoiceProfileRecord,
+    ) -> None:
+        if profile.analysis_state is VoiceAnalysisState.NEVER_ANALYZED:
+            raise VoiceProfileAnalysisRequiredError(
+                "Voice rewrite guidance requires analyzed Voice DNA. "
+                "Analyze the voice profile before using it for rewrites."
+            )
+
+        if profile.analysis_state is VoiceAnalysisState.STALE:
+            raise VoiceProfileAnalysisRequiredError(
+                "Voice rewrite guidance requires current Voice DNA. "
+                "Re-analyze the voice profile before using it for rewrites."
+            )
+
+        if profile.analysis_state is not VoiceAnalysisState.CURRENT:
+            raise VoiceProfileAnalysisRequiredError(
+                "Voice rewrite guidance requires current Voice DNA."
             )
