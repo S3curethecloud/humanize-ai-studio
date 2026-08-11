@@ -6,6 +6,7 @@ from app.domain.models import (
 )
 from app.v2.domain.models import (
     RewriteHistoryRecord,
+    VoiceRewriteAnalysisSnapshot,
 )
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
@@ -49,6 +50,7 @@ class WorkspaceRewriteService:
         request: RewriteRequest,
         voice_profile_id: str | None = None,
         voice_guidance_version: str | None = None,
+        voice_analysis_snapshot: VoiceRewriteAnalysisSnapshot | None = None,
     ) -> WorkspaceRewriteResult:
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
@@ -63,7 +65,8 @@ class WorkspaceRewriteService:
             request=request,
             response=response,
             voice_profile_id=voice_profile_id,
-            voice_guidance_version=(voice_guidance_version),
+            voice_guidance_version=voice_guidance_version,
+            voice_analysis_snapshot=voice_analysis_snapshot,
         )
 
         return WorkspaceRewriteResult(

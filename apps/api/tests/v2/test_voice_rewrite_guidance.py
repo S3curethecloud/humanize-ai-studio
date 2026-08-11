@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from app.domain.models import (
@@ -22,6 +24,7 @@ from app.v2.domain.models import (
     VoiceDirectness,
     VoiceFirstPersonFrequency,
     VoiceFormality,
+    VoiceRewriteAnalysisSnapshot,
     VoiceSentenceLength,
     VoiceSourceSample,
     VoiceStyleAttributes,
@@ -38,6 +41,25 @@ from app.v2.services.voice_rewrite_guidance import (
 from app.workflows.rewrite_workflow import (
     RewriteWorkflow,
 )
+
+
+def _analysis_snapshot() -> VoiceRewriteAnalysisSnapshot:
+    return VoiceRewriteAnalysisSnapshot(
+        analysis_state="current",
+        analyzer_version="voice-dna-v1",
+        analyzed_at=datetime(
+            2026,
+            8,
+            11,
+            12,
+            0,
+            tzinfo=UTC,
+        ),
+        source_fingerprint="snapshot-fingerprint",
+        sample_count=1,
+        sufficiency="limited",
+        consistency="not_applicable",
+    )
 
 
 def _services() -> V2Services:
@@ -125,6 +147,7 @@ def test_translator_emits_all_eight_voice_dimensions() -> None:
         profile_id="voice_1",
         workspace_id="workspace_1",
         style_attributes=attributes,
+        analysis_snapshot=_analysis_snapshot(),
     )
 
     assert result.guidance_version == ("voice-rewrite-guidance-v1")
@@ -150,11 +173,13 @@ def test_guidance_translation_is_deterministic() -> None:
         profile_id="voice_1",
         workspace_id="workspace_1",
         style_attributes=attributes,
+        analysis_snapshot=_analysis_snapshot(),
     )
     second = translator.translate(
         profile_id="voice_1",
         workspace_id="workspace_1",
         style_attributes=attributes,
+        analysis_snapshot=_analysis_snapshot(),
     )
 
     assert first == second
@@ -167,6 +192,7 @@ def test_voice_guardrail_authority_order_is_fixed() -> None:
         profile_id="voice_1",
         workspace_id="workspace_1",
         style_attributes=VoiceStyleAttributes(),
+        analysis_snapshot=_analysis_snapshot(),
     )
 
     guardrails = result.guardrails

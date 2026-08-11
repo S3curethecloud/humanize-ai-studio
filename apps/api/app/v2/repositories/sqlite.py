@@ -20,6 +20,7 @@ from app.v2.domain.models import (
     VoiceFormality,
     VoiceProfileRecord,
     VoiceProfileStatus,
+    VoiceRewriteAnalysisSnapshot,
     VoiceSentenceLength,
     VoiceSourceSample,
     VoiceStyleAttributes,
@@ -99,6 +100,7 @@ def initialize_database(
                 prompt_version TEXT NOT NULL,
                 voice_profile_id TEXT,
                 voice_guidance_version TEXT,
+                voice_analysis_snapshot TEXT,
                 fallback_used INTEGER NOT NULL,
                 verification_decision TEXT NOT NULL,
                 editorial_quality_decision TEXT NOT NULL,
@@ -196,6 +198,11 @@ def initialize_database(
 
         if "voice_guidance_version" not in rewrite_history_columns:
             connection.execute("ALTER TABLE rewrite_history ADD COLUMN voice_guidance_version TEXT")
+
+        if "voice_analysis_snapshot" not in rewrite_history_columns:
+            connection.execute(
+                "ALTER TABLE rewrite_history ADD COLUMN voice_analysis_snapshot TEXT"
+            )
 
         voice_profile_columns = {
             row["name"]
@@ -510,6 +517,7 @@ class SQLiteRewriteHistoryRepository:
                     prompt_version,
                     voice_profile_id,
                     voice_guidance_version,
+                    voice_analysis_snapshot,
                     fallback_used,
                     verification_decision,
                     editorial_quality_decision,
@@ -518,7 +526,7 @@ class SQLiteRewriteHistoryRepository:
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -537,6 +545,14 @@ class SQLiteRewriteHistoryRepository:
                     record.prompt_version,
                     record.voice_profile_id,
                     record.voice_guidance_version,
+                    (
+                        json.dumps(
+                            record.voice_analysis_snapshot.model_dump(mode="json"),
+                            separators=(",", ":"),
+                        )
+                        if record.voice_analysis_snapshot is not None
+                        else None
+                    ),
                     int(record.fallback_used),
                     record.verification_decision,
                     (record.editorial_quality_decision),
@@ -608,7 +624,14 @@ class SQLiteRewriteHistoryRepository:
             model_name=row["model_name"],
             prompt_version=row["prompt_version"],
             voice_profile_id=row["voice_profile_id"],
-            voice_guidance_version=(row["voice_guidance_version"]),
+            voice_guidance_version=row["voice_guidance_version"],
+            voice_analysis_snapshot=(
+                VoiceRewriteAnalysisSnapshot.model_validate(
+                    json.loads(row["voice_analysis_snapshot"])
+                )
+                if row["voice_analysis_snapshot"] is not None
+                else None
+            ),
             fallback_used=bool(row["fallback_used"]),
             verification_decision=(row["verification_decision"]),
             editorial_quality_decision=(row["editorial_quality_decision"]),

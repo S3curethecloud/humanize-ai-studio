@@ -263,19 +263,31 @@ def test_voice_profile_selection_applies_voice_guidance() -> None:
     assert response.status_code == 200
     assert len(provider.requests) == 1
 
+    payload = response.json()
+    history = payload["history"]
+    snapshot = history["voice_analysis_snapshot"]
+
+    assert snapshot["analysis_state"] == "current"
+    assert snapshot["analyzer_version"] == "voice-dna-v1"
+    assert snapshot["source_fingerprint"]
+    assert snapshot["sample_count"] >= 1
+    assert snapshot["sufficiency"]
+    assert snapshot["consistency"]
+    assert snapshot["analyzed_at"]
+
     provider_request = provider.requests[0]
 
     assert "VOICE DNA GUIDANCE" in provider_request.tone
     assert "formality=" in provider_request.tone
     assert "transition_style=" in provider_request.tone
 
-    assert set(response.json()) == {
+    assert set(payload) == {
         "rewrite",
         "history",
         "voice",
     }
 
-    voice = response.json()["voice"]
+    voice = payload["voice"]
 
     assert voice == {
         "applied": True,
@@ -624,6 +636,16 @@ def test_history_voice_evidence_survives_profile_update_and_archive() -> None:
     assert record["voice_profile_id"] == profile_id
     assert record["voice_guidance_version"] == "voice-rewrite-guidance-v1"
 
+    snapshot = record["voice_analysis_snapshot"]
+
+    assert snapshot["analysis_state"] == "current"
+    assert snapshot["analyzer_version"] == "voice-dna-v1"
+    assert snapshot["source_fingerprint"]
+    assert snapshot["sample_count"] >= 1
+    assert snapshot["sufficiency"]
+    assert snapshot["consistency"]
+    assert snapshot["analyzed_at"]
+
 
 def test_non_voice_history_api_omits_voice_audit_fields() -> None:
     provider = RecordingProvider()
@@ -663,6 +685,7 @@ def test_non_voice_history_api_omits_voice_audit_fields() -> None:
 
     assert "voice_profile_id" not in record
     assert "voice_guidance_version" not in record
+    assert "voice_analysis_snapshot" not in record
 
 
 def test_never_analyzed_voice_profile_returns_409_before_generation() -> None:

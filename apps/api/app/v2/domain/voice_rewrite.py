@@ -5,6 +5,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from app.v2.domain.models import (
+    VoiceRewriteAnalysisSnapshot,
     VoiceStyleAttributes,
 )
 
@@ -63,6 +64,7 @@ class VoiceRewriteGuidance(BaseModel):
     workspace_id: str
 
     style_attributes: VoiceStyleAttributes
+    analysis_snapshot: VoiceRewriteAnalysisSnapshot
 
     instructions: tuple[
         VoiceGuidanceInstruction,

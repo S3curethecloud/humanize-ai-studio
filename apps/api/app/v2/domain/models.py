@@ -44,6 +44,18 @@ class WorkspaceMembership(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class VoiceRewriteAnalysisSnapshot(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    analysis_state: str
+    analyzer_version: str
+    analyzed_at: datetime
+    source_fingerprint: str
+    sample_count: int
+    sufficiency: str
+    consistency: str
+
+
 class RewriteHistoryRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -66,6 +78,7 @@ class RewriteHistoryRecord(BaseModel):
 
     voice_profile_id: str | None = None
     voice_guidance_version: str | None = None
+    voice_analysis_snapshot: VoiceRewriteAnalysisSnapshot | None = None
 
     fallback_used: bool
     verification_decision: str

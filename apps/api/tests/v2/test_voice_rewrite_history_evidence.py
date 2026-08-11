@@ -129,8 +129,22 @@ def _create_voice_rewrite(
         ),
     )
 
-    assert result.history.voice_profile_id == (profile.profile_id)
+    assert result.history.voice_profile_id == profile.profile_id
     assert result.history.voice_guidance_version == "voice-rewrite-guidance-v1"
+    assert result.history.voice_analysis_snapshot is not None
+    assert result.history.voice_analysis_snapshot.analysis_state == "current"
+
+    provenance = profile.analysis_provenance
+
+    assert provenance is not None
+    assert result.history.voice_analysis_snapshot.analyzer_version == provenance.analyzer_version
+    assert result.history.voice_analysis_snapshot.analyzed_at == provenance.analyzed_at
+    assert (
+        result.history.voice_analysis_snapshot.source_fingerprint == provenance.source_fingerprint
+    )
+    assert result.history.voice_analysis_snapshot.sample_count == provenance.sample_count
+    assert result.history.voice_analysis_snapshot.sufficiency == provenance.sufficiency.value
+    assert result.history.voice_analysis_snapshot.consistency == provenance.consistency.value
 
     return (
         user.user_id,
@@ -154,6 +168,10 @@ def test_voice_evidence_is_persisted_in_memory_history() -> None:
     assert len(records) == 1
     assert records[0].voice_profile_id == profile_id
     assert records[0].voice_guidance_version == "voice-rewrite-guidance-v1"
+    assert records[0].voice_analysis_snapshot is not None
+    assert records[0].voice_analysis_snapshot.analysis_state == "current"
+    assert records[0].voice_analysis_snapshot.analyzer_version == "voice-dna-v1"
+    assert records[0].voice_analysis_snapshot.source_fingerprint
 
 
 def test_voice_evidence_survives_sqlite_service_restart(
@@ -181,6 +199,10 @@ def test_voice_evidence_survives_sqlite_service_restart(
     assert len(records) == 1
     assert records[0].voice_profile_id == profile_id
     assert records[0].voice_guidance_version == "voice-rewrite-guidance-v1"
+    assert records[0].voice_analysis_snapshot is not None
+    assert records[0].voice_analysis_snapshot.analysis_state == "current"
+    assert records[0].voice_analysis_snapshot.analyzer_version == "voice-dna-v1"
+    assert records[0].voice_analysis_snapshot.source_fingerprint
 
 
 def test_initialize_database_migrates_legacy_history_table(
@@ -223,3 +245,68 @@ def test_initialize_database_migrates_legacy_history_table(
 
     assert "voice_profile_id" in columns
     assert "voice_guidance_version" in columns
+    assert "voice_analysis_snapshot" in columns
+
+
+def test_rewrite_snapshot_survives_profile_reanalysis() -> None:
+    services = _services(
+        backend=PersistenceBackend.MEMORY,
+    )
+
+    user_id, workspace_id, profile_id = _create_voice_rewrite(services)
+
+    before_records = services.history.list_workspace_history(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    assert len(before_records) == 1
+
+    original_snapshot = before_records[0].voice_analysis_snapshot
+
+    assert original_snapshot is not None
+
+    profile = services.voice_profiles.get_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile_id=profile_id,
+    )
+
+    updated = services.voice_profiles.update_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile=profile.model_copy(
+            update={
+                "source_samples": (
+                    VoiceSourceSample(
+                        sample_id="history_sample_1",
+                        text=(
+                            "I changed this source after the rewrite. "
+                            "The profile must become stale now. "
+                            "A new analysis should produce new provenance."
+                        ),
+                    ),
+                ),
+            }
+        ),
+    )
+
+    assert updated.analysis_state.value == "stale"
+
+    reanalyzed = services.voice_profiles.analyze_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile_id=profile_id,
+    ).profile
+
+    assert reanalyzed.analysis_state.value == "current"
+    assert reanalyzed.analysis_provenance is not None
+    assert reanalyzed.analysis_provenance.source_fingerprint != original_snapshot.source_fingerprint
+
+    after_records = services.history.list_workspace_history(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    assert len(after_records) == 1
+    assert after_records[0].voice_analysis_snapshot == original_snapshot

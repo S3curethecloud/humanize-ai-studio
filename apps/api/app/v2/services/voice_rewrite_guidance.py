@@ -9,6 +9,7 @@ from app.v2.domain.models import (
     VoiceFormality,
     VoiceProfileRecord,
     VoiceProfileStatus,
+    VoiceRewriteAnalysisSnapshot,
     VoiceSentenceLength,
     VoiceStyleAttributes,
     VoiceTransitionStyle,
@@ -121,6 +122,7 @@ class VoiceRewriteGuidanceTranslator:
         profile_id: str,
         workspace_id: str,
         style_attributes: VoiceStyleAttributes,
+        analysis_snapshot: VoiceRewriteAnalysisSnapshot,
     ) -> VoiceRewriteGuidance:
         instructions = (
             self._instruction(
@@ -170,6 +172,7 @@ class VoiceRewriteGuidanceTranslator:
             profile_id=profile_id,
             workspace_id=workspace_id,
             style_attributes=style_attributes,
+            analysis_snapshot=analysis_snapshot,
             instructions=instructions,
         )
 
@@ -215,10 +218,28 @@ class VoiceRewriteGuidanceService:
         self._require_active_profile(profile)
         self._require_current_analysis(profile)
 
+        provenance = profile.analysis_provenance
+
+        if provenance is None:
+            raise VoiceProfileAnalysisRequiredError(
+                "Current Voice DNA requires analysis provenance."
+            )
+
+        analysis_snapshot = VoiceRewriteAnalysisSnapshot(
+            analysis_state=profile.analysis_state.value,
+            analyzer_version=provenance.analyzer_version,
+            analyzed_at=provenance.analyzed_at,
+            source_fingerprint=provenance.source_fingerprint,
+            sample_count=provenance.sample_count,
+            sufficiency=provenance.sufficiency.value,
+            consistency=provenance.consistency.value,
+        )
+
         return self._translator.translate(
             profile_id=profile.profile_id,
             workspace_id=profile.workspace_id,
             style_attributes=profile.style_attributes,
+            analysis_snapshot=analysis_snapshot,
         )
 
     def _require_active_profile(
