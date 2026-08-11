@@ -5,6 +5,13 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from app.v2.domain.claim_lock import (
+    ClaimLock,
+    ClaimLockEnforcementMode,
+)
+from app.v2.domain.claim_lock_audit import (
+    ClaimLockValidationAuditSnapshot,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     RewriteRecordStatus,
@@ -105,6 +112,9 @@ def initialize_database(
                 voice_analysis_snapshot TEXT,
                 voice_analysis_binding TEXT,
                 voice_analysis_authenticity TEXT,
+                claim_lock_snapshot TEXT,
+                claim_lock_validation TEXT,
+                claim_lock_enforcement_mode TEXT,
                 fallback_used INTEGER NOT NULL,
                 verification_decision TEXT NOT NULL,
                 editorial_quality_decision TEXT NOT NULL,
@@ -214,6 +224,17 @@ def initialize_database(
         if "voice_analysis_authenticity" not in rewrite_history_columns:
             connection.execute(
                 "ALTER TABLE rewrite_history ADD COLUMN voice_analysis_authenticity TEXT"
+            )
+
+        if "claim_lock_snapshot" not in rewrite_history_columns:
+            connection.execute("ALTER TABLE rewrite_history ADD COLUMN claim_lock_snapshot TEXT")
+
+        if "claim_lock_validation" not in rewrite_history_columns:
+            connection.execute("ALTER TABLE rewrite_history ADD COLUMN claim_lock_validation TEXT")
+
+        if "claim_lock_enforcement_mode" not in rewrite_history_columns:
+            connection.execute(
+                "ALTER TABLE rewrite_history ADD COLUMN claim_lock_enforcement_mode TEXT"
             )
 
         voice_profile_columns = {
@@ -532,6 +553,9 @@ class SQLiteRewriteHistoryRepository:
                     voice_analysis_snapshot,
                     voice_analysis_binding,
                     voice_analysis_authenticity,
+                    claim_lock_snapshot,
+                    claim_lock_validation,
+                    claim_lock_enforcement_mode,
                     fallback_used,
                     verification_decision,
                     editorial_quality_decision,
@@ -540,7 +564,8 @@ class SQLiteRewriteHistoryRepository:
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?
                 )
                 """,
                 (
@@ -581,6 +606,27 @@ class SQLiteRewriteHistoryRepository:
                             separators=(",", ":"),
                         )
                         if record.voice_analysis_authenticity is not None
+                        else None
+                    ),
+                    (
+                        json.dumps(
+                            record.claim_lock_snapshot.model_dump(mode="json"),
+                            separators=(",", ":"),
+                        )
+                        if record.claim_lock_snapshot is not None
+                        else None
+                    ),
+                    (
+                        json.dumps(
+                            record.claim_lock_validation.model_dump(mode="json"),
+                            separators=(",", ":"),
+                        )
+                        if record.claim_lock_validation is not None
+                        else None
+                    ),
+                    (
+                        record.claim_lock_enforcement_mode.value
+                        if record.claim_lock_enforcement_mode is not None
                         else None
                     ),
                     int(record.fallback_used),
@@ -674,6 +720,23 @@ class SQLiteRewriteHistoryRepository:
                     json.loads(row["voice_analysis_authenticity"])
                 )
                 if row["voice_analysis_authenticity"] is not None
+                else None
+            ),
+            claim_lock_snapshot=(
+                ClaimLock.model_validate(json.loads(row["claim_lock_snapshot"]))
+                if row["claim_lock_snapshot"] is not None
+                else None
+            ),
+            claim_lock_validation=(
+                ClaimLockValidationAuditSnapshot.model_validate(
+                    json.loads(row["claim_lock_validation"])
+                )
+                if row["claim_lock_validation"] is not None
+                else None
+            ),
+            claim_lock_enforcement_mode=(
+                ClaimLockEnforcementMode(row["claim_lock_enforcement_mode"])
+                if row["claim_lock_enforcement_mode"] is not None
                 else None
             ),
             fallback_used=bool(row["fallback_used"]),
