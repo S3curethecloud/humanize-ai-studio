@@ -92,6 +92,8 @@ def initialize_database(
                 provider_name TEXT NOT NULL,
                 model_name TEXT NOT NULL,
                 prompt_version TEXT NOT NULL,
+                voice_profile_id TEXT,
+                voice_guidance_version TEXT,
                 fallback_used INTEGER NOT NULL,
                 verification_decision TEXT NOT NULL,
                 editorial_quality_decision TEXT NOT NULL,
@@ -169,6 +171,17 @@ def initialize_database(
             );
             """
         )
+
+        rewrite_history_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(rewrite_history)").fetchall()
+        }
+
+        if "voice_profile_id" not in rewrite_history_columns:
+            connection.execute("ALTER TABLE rewrite_history ADD COLUMN voice_profile_id TEXT")
+
+        if "voice_guidance_version" not in rewrite_history_columns:
+            connection.execute("ALTER TABLE rewrite_history ADD COLUMN voice_guidance_version TEXT")
 
 
 class SQLiteUserRepository:
@@ -392,6 +405,8 @@ class SQLiteRewriteHistoryRepository:
                     provider_name,
                     model_name,
                     prompt_version,
+                    voice_profile_id,
+                    voice_guidance_version,
                     fallback_used,
                     verification_decision,
                     editorial_quality_decision,
@@ -400,7 +415,7 @@ class SQLiteRewriteHistoryRepository:
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -417,6 +432,8 @@ class SQLiteRewriteHistoryRepository:
                     record.provider_name,
                     record.model_name,
                     record.prompt_version,
+                    record.voice_profile_id,
+                    record.voice_guidance_version,
                     int(record.fallback_used),
                     record.verification_decision,
                     (record.editorial_quality_decision),
@@ -487,6 +504,8 @@ class SQLiteRewriteHistoryRepository:
             provider_name=row["provider_name"],
             model_name=row["model_name"],
             prompt_version=row["prompt_version"],
+            voice_profile_id=row["voice_profile_id"],
+            voice_guidance_version=(row["voice_guidance_version"]),
             fallback_used=bool(row["fallback_used"]),
             verification_decision=(row["verification_decision"]),
             editorial_quality_decision=(row["editorial_quality_decision"]),

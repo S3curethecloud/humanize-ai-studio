@@ -64,6 +64,9 @@ class RewriteHistoryRecord(BaseModel):
     model_name: str
     prompt_version: str
 
+    voice_profile_id: str | None = None
+    voice_guidance_version: str | None = None
+
     fallback_used: bool
     verification_decision: str
     editorial_quality_decision: str

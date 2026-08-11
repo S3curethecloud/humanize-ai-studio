@@ -65,6 +65,8 @@ class VoiceAwareWorkspaceRewriteService:
                 workspace_id=workspace_id,
                 user_id=user_id,
                 request=request,
+                voice_profile_id=guidance.profile_id,
+                voice_guidance_version=(guidance.guidance_version),
             )
 
         return VoiceAwareWorkspaceRewriteResult(

@@ -87,6 +87,7 @@ def create_workspace(
 @router.get(
     "/workspaces/{workspace_id}/history",
     response_model=WorkspaceHistoryResponse,
+    response_model_exclude_none=True,
 )
 def list_workspace_history(
     workspace_id: str,

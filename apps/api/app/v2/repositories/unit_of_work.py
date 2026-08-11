@@ -138,6 +138,8 @@ class TransactionalRewriteHistoryRepository:
                 provider_name,
                 model_name,
                 prompt_version,
+                voice_profile_id,
+                voice_guidance_version,
                 fallback_used,
                 verification_decision,
                 editorial_quality_decision,
@@ -146,7 +148,7 @@ class TransactionalRewriteHistoryRepository:
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -163,6 +165,8 @@ class TransactionalRewriteHistoryRepository:
                 record.provider_name,
                 record.model_name,
                 record.prompt_version,
+                record.voice_profile_id,
+                record.voice_guidance_version,
                 int(record.fallback_used),
                 record.verification_decision,
                 record.editorial_quality_decision,

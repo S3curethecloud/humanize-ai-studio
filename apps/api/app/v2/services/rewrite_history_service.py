@@ -34,6 +34,8 @@ class RewriteHistoryService:
         user_id: str,
         request: RewriteRequest,
         response: RewriteResponse,
+        voice_profile_id: str | None = None,
+        voice_guidance_version: str | None = None,
     ) -> RewriteHistoryRecord:
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
@@ -54,6 +56,8 @@ class RewriteHistoryService:
             provider_name=(response.provider_name),
             model_name=response.model_name,
             prompt_version=(response.prompt_version),
+            voice_profile_id=voice_profile_id,
+            voice_guidance_version=voice_guidance_version,
             fallback_used=(response.provider_execution.fallback_used),
             verification_decision=(response.verification.decision.value),
             editorial_quality_decision=(response.editorial_quality.decision.value),

@@ -47,6 +47,8 @@ class WorkspaceRewriteService:
         workspace_id: str,
         user_id: str,
         request: RewriteRequest,
+        voice_profile_id: str | None = None,
+        voice_guidance_version: str | None = None,
     ) -> WorkspaceRewriteResult:
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
@@ -60,6 +62,8 @@ class WorkspaceRewriteService:
             user_id=user_id,
             request=request,
             response=response,
+            voice_profile_id=voice_profile_id,
+            voice_guidance_version=(voice_guidance_version),
         )
 
         return WorkspaceRewriteResult(
