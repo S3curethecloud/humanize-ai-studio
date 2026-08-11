@@ -113,9 +113,11 @@ def test_voice_repository_contract_is_runtime_checkable_by_shape() -> None:
             self,
             *,
             workspace_id: str,
+            profile_status: VoiceProfileStatus | None = None,
             limit: int = 50,
         ) -> tuple[VoiceProfileRecord, ...]:
             del workspace_id
+            del profile_status
             del limit
             return ()
 

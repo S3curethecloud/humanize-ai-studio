@@ -102,6 +102,7 @@ class VoiceProfileService:
         *,
         workspace_id: str,
         user_id: str,
+        profile_status: VoiceProfileStatus | None = None,
         limit: int = 50,
     ) -> tuple[VoiceProfileRecord, ...]:
         self._workspace_service.require_membership(
@@ -111,6 +112,7 @@ class VoiceProfileService:
 
         return self._profiles.list_for_workspace(
             workspace_id=workspace_id,
+            profile_status=profile_status,
             limit=limit,
         )
 

@@ -316,3 +316,67 @@ def test_sqlite_voice_profile_cannot_move_workspaces(
         repository.update(moved)
 
     assert repository.get(original.profile_id) == original
+
+
+def test_sqlite_voice_profile_listing_filters_by_status(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "voice.db"
+    _prepare_workspace(database_path)
+
+    repository = SQLiteVoiceProfileRepository(database_path)
+
+    active = _profile(
+        profile_id="voice_active",
+        status=VoiceProfileStatus.ACTIVE,
+    )
+    archived = _profile(
+        profile_id="voice_archived",
+        status=VoiceProfileStatus.ARCHIVED,
+    )
+
+    repository.create(active)
+    repository.create(archived)
+
+    assert repository.list_for_workspace(
+        workspace_id="workspace_1",
+        profile_status=VoiceProfileStatus.ACTIVE,
+    ) == (active,)
+
+    assert repository.list_for_workspace(
+        workspace_id="workspace_1",
+        profile_status=VoiceProfileStatus.ARCHIVED,
+    ) == (archived,)
+
+
+def test_sqlite_voice_profile_status_filter_applies_before_limit(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "voice.db"
+    _prepare_workspace(database_path)
+
+    repository = SQLiteVoiceProfileRepository(database_path)
+
+    now = datetime.now(UTC)
+
+    archived = _profile(
+        profile_id="voice_archived_newest",
+        status=VoiceProfileStatus.ARCHIVED,
+        updated_at=now,
+    )
+    active = _profile(
+        profile_id="voice_active_older",
+        status=VoiceProfileStatus.ACTIVE,
+        updated_at=now - timedelta(minutes=1),
+    )
+
+    repository.create(archived)
+    repository.create(active)
+
+    records = repository.list_for_workspace(
+        workspace_id="workspace_1",
+        profile_status=VoiceProfileStatus.ACTIVE,
+        limit=1,
+    )
+
+    assert records == (active,)

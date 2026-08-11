@@ -199,3 +199,57 @@ def test_archived_voice_profile_remains_retrievable() -> None:
     assert repository.get(archived.profile_id) == archived
 
     assert repository.list_for_workspace(workspace_id=archived.workspace_id) == (archived,)
+
+
+def test_voice_profile_listing_filters_by_status() -> None:
+    repository = InMemoryVoiceProfileRepository()
+
+    active = _profile(
+        profile_id="voice_active",
+        status=VoiceProfileStatus.ACTIVE,
+    )
+    archived = _profile(
+        profile_id="voice_archived",
+        status=VoiceProfileStatus.ARCHIVED,
+    )
+
+    repository.create(active)
+    repository.create(archived)
+
+    assert repository.list_for_workspace(
+        workspace_id="workspace_1",
+        profile_status=VoiceProfileStatus.ACTIVE,
+    ) == (active,)
+
+    assert repository.list_for_workspace(
+        workspace_id="workspace_1",
+        profile_status=VoiceProfileStatus.ARCHIVED,
+    ) == (archived,)
+
+
+def test_voice_profile_status_filter_applies_before_limit() -> None:
+    repository = InMemoryVoiceProfileRepository()
+
+    now = datetime.now(UTC)
+
+    archived = _profile(
+        profile_id="voice_archived_newest",
+        status=VoiceProfileStatus.ARCHIVED,
+        updated_at=now,
+    )
+    active = _profile(
+        profile_id="voice_active_older",
+        status=VoiceProfileStatus.ACTIVE,
+        updated_at=now - timedelta(minutes=1),
+    )
+
+    repository.create(archived)
+    repository.create(active)
+
+    records = repository.list_for_workspace(
+        workspace_id="workspace_1",
+        profile_status=VoiceProfileStatus.ACTIVE,
+        limit=1,
+    )
+
+    assert records == (active,)

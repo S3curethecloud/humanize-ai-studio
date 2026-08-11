@@ -6,6 +6,7 @@ from app.v2.domain.models import (
     RewriteHistoryRecord,
     UserRecord,
     VoiceProfileRecord,
+    VoiceProfileStatus,
     WorkspaceMembership,
     WorkspaceRecord,
 )
@@ -83,6 +84,7 @@ class VoiceProfileRepository(Protocol):
         self,
         *,
         workspace_id: str,
+        profile_status: VoiceProfileStatus | None = None,
         limit: int = 50,
     ) -> tuple[VoiceProfileRecord, ...]: ...
 

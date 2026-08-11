@@ -4,6 +4,7 @@ from app.v2.domain.models import (
     RewriteHistoryRecord,
     UserRecord,
     VoiceProfileRecord,
+    VoiceProfileStatus,
     WorkspaceMembership,
     WorkspaceRecord,
 )
@@ -146,10 +147,16 @@ class InMemoryVoiceProfileRepository:
         self,
         *,
         workspace_id: str,
+        profile_status: VoiceProfileStatus | None = None,
         limit: int = 50,
     ) -> tuple[VoiceProfileRecord, ...]:
         profiles = (
-            profile for profile in self._profiles.values() if profile.workspace_id == workspace_id
+            profile
+            for profile in self._profiles.values()
+            if (
+                profile.workspace_id == workspace_id
+                and (profile_status is None or profile.status is profile_status)
+            )
         )
 
         ordered = sorted(

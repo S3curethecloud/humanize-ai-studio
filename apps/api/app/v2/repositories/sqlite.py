@@ -576,22 +576,40 @@ class SQLiteVoiceProfileRepository:
         self,
         *,
         workspace_id: str,
+        profile_status: VoiceProfileStatus | None = None,
         limit: int = 50,
     ) -> tuple[VoiceProfileRecord, ...]:
         with _connect(self._database_path) as connection:
-            rows = connection.execute(
-                """
-                SELECT *
-                FROM voice_profiles
-                WHERE workspace_id = ?
-                ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (
-                    workspace_id,
-                    limit,
-                ),
-            ).fetchall()
+            if profile_status is None:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM voice_profiles
+                    WHERE workspace_id = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (
+                        workspace_id,
+                        limit,
+                    ),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM voice_profiles
+                    WHERE workspace_id = ?
+                      AND status = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (
+                        workspace_id,
+                        profile_status.value,
+                        limit,
+                    ),
+                ).fetchall()
 
             return tuple(
                 self._to_record(

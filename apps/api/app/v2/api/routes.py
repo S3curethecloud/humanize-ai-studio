@@ -8,6 +8,7 @@ from fastapi import (
 )
 
 from app.v2.api.dependencies import services
+from app.v2.domain.models import VoiceProfileStatus
 from app.v2.services.voice_profile_service import (
     VoiceProfileLifecycleError,
 )
@@ -225,6 +226,7 @@ def list_voice_profiles(
         min_length=1,
         max_length=200,
     ),
+    profile_status: VoiceProfileStatus | None = None,
     limit: int = Query(
         default=50,
         ge=1,
@@ -235,6 +237,7 @@ def list_voice_profiles(
         profiles = services.voice_profiles.list_profiles(
             workspace_id=workspace_id,
             user_id=user_id,
+            profile_status=profile_status,
             limit=limit,
         )
     except PermissionError as exc:

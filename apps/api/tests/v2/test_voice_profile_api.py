@@ -507,3 +507,161 @@ def test_archived_voice_profile_remains_readable() -> None:
 
     assert get_response.status_code == 200
     assert get_response.json()["profile"]["status"] == "archived"
+
+
+def test_list_voice_profiles_without_status_returns_all_profiles() -> None:
+    user_id = _create_user(
+        email="list-all@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    active = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name="Active Voice",
+    )
+    archived = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name="Archived Voice",
+    )
+    archived_id = cast(str, archived["profile_id"])
+
+    archive_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{archived_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert archive_response.status_code == 200
+
+    response = client.get(
+        f"/api/v2/workspaces/{workspace_id}/voice-profiles",
+        params={
+            "user_id": user_id,
+        },
+    )
+
+    assert response.status_code == 200
+
+    profiles = response.json()["profiles"]
+
+    assert len(profiles) == 2
+    assert {profile["profile_id"] for profile in profiles} == {
+        active["profile_id"],
+        archived["profile_id"],
+    }
+
+
+def test_list_voice_profiles_filters_active_profiles() -> None:
+    user_id = _create_user(
+        email="list-active@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    active = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name="Active Voice",
+    )
+    archived = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name="Archived Voice",
+    )
+    archived_id = cast(str, archived["profile_id"])
+
+    archive_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{archived_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert archive_response.status_code == 200
+
+    response = client.get(
+        f"/api/v2/workspaces/{workspace_id}/voice-profiles",
+        params={
+            "user_id": user_id,
+            "profile_status": "active",
+        },
+    )
+
+    assert response.status_code == 200
+
+    profiles = response.json()["profiles"]
+
+    assert len(profiles) == 1
+    assert profiles[0]["profile_id"] == active["profile_id"]
+    assert profiles[0]["status"] == "active"
+
+
+def test_list_voice_profiles_filters_archived_profiles() -> None:
+    user_id = _create_user(
+        email="list-archived@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name="Active Voice",
+    )
+    archived = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name="Archived Voice",
+    )
+    archived_id = cast(str, archived["profile_id"])
+
+    archive_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{archived_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert archive_response.status_code == 200
+
+    response = client.get(
+        f"/api/v2/workspaces/{workspace_id}/voice-profiles",
+        params={
+            "user_id": user_id,
+            "profile_status": "archived",
+        },
+    )
+
+    assert response.status_code == 200
+
+    profiles = response.json()["profiles"]
+
+    assert len(profiles) == 1
+    assert profiles[0]["profile_id"] == archived["profile_id"]
+    assert profiles[0]["status"] == "archived"
+
+
+def test_list_voice_profiles_rejects_invalid_status() -> None:
+    user_id = _create_user(
+        email="list-invalid-status@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    response = client.get(
+        f"/api/v2/workspaces/{workspace_id}/voice-profiles",
+        params={
+            "user_id": user_id,
+            "profile_status": "deleted",
+        },
+    )
+
+    assert response.status_code == 422
