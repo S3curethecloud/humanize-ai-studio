@@ -8,6 +8,10 @@ from app.v2.domain.models import (
     RewriteHistoryRecord,
     VoiceRewriteAnalysisSnapshot,
 )
+from app.v2.services.claim_lock_preparation import (
+    ClaimLockPreparationResult,
+    ClaimLockPreparationService,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -25,9 +29,11 @@ class WorkspaceRewriteResult:
         *,
         response: RewriteResponse,
         history: RewriteHistoryRecord,
+        claim_lock_preparation: ClaimLockPreparationResult,
     ) -> None:
         self.response = response
         self.history = history
+        self.claim_lock_preparation = claim_lock_preparation
 
 
 class WorkspaceRewriteService:
@@ -37,10 +43,14 @@ class WorkspaceRewriteService:
         workspace_service: WorkspaceService,
         history_service: RewriteHistoryService,
         workflow: RewriteWorkflow,
+        claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
     ) -> None:
         self._workspace_service = workspace_service
         self._history_service = history_service
         self._workflow = workflow
+        self._claim_lock_preparation_service = (
+            claim_lock_preparation_service or ClaimLockPreparationService()
+        )
 
     def execute(
         self,
@@ -55,6 +65,10 @@ class WorkspaceRewriteService:
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
             user_id=user_id,
+        )
+
+        claim_lock_preparation = self._claim_lock_preparation_service.prepare(
+            text=request.text,
         )
 
         response = self._workflow.execute(request)
@@ -72,4 +86,5 @@ class WorkspaceRewriteService:
         return WorkspaceRewriteResult(
             response=response,
             history=history,
+            claim_lock_preparation=(claim_lock_preparation),
         )

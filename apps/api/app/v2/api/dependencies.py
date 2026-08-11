@@ -15,6 +15,9 @@ from app.v2.repositories.factory import (
     build_repository_bundle,
     build_unit_of_work,
 )
+from app.v2.services.claim_lock_preparation import (
+    ClaimLockPreparationService,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -100,10 +103,13 @@ class V2Services:
                 provider=resolved_voice_provider,
             )
 
+        self.claim_lock_preparation = ClaimLockPreparationService()
+
         self.rewrite = WorkspaceRewriteService(
             workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
+            claim_lock_preparation_service=(self.claim_lock_preparation),
         )
 
         self.voice_rewrite = None
