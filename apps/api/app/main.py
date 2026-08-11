@@ -7,6 +7,7 @@ from app.observability.logging import (
 from app.observability.middleware import (
     RequestObservabilityMiddleware,
 )
+from app.v2.api.routes import router as v2_router
 
 configure_structured_logging()
 
@@ -18,3 +19,4 @@ app = FastAPI(
 
 app.add_middleware(RequestObservabilityMiddleware)
 app.include_router(router)
+app.include_router(v2_router)
