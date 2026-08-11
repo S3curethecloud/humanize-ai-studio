@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -8,6 +9,10 @@ from app.v2.domain.models import (
     RewriteHistoryRecord,
     RewriteRecordStatus,
     UserRecord,
+    VoiceAnalysisConsistency,
+    VoiceAnalysisProvenance,
+    VoiceAnalysisState,
+    VoiceAnalysisSufficiency,
     VoiceConcision,
     VoiceContractionPreference,
     VoiceDirectness,
@@ -131,6 +136,14 @@ def initialize_database(
                 first_person_frequency TEXT NOT NULL,
                 contraction_preference TEXT NOT NULL,
                 transition_style TEXT NOT NULL,
+                analysis_state TEXT NOT NULL DEFAULT 'never_analyzed',
+                analysis_analyzer_version TEXT,
+                analysis_analyzed_at TEXT,
+                analysis_source_sample_ids TEXT,
+                analysis_source_fingerprint TEXT,
+                analysis_sample_count INTEGER,
+                analysis_sufficiency TEXT,
+                analysis_consistency TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (
@@ -148,6 +161,7 @@ def initialize_database(
                 profile_id TEXT NOT NULL,
                 text TEXT NOT NULL,
                 label TEXT,
+                sample_position INTEGER,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (
                     profile_id
@@ -182,6 +196,95 @@ def initialize_database(
 
         if "voice_guidance_version" not in rewrite_history_columns:
             connection.execute("ALTER TABLE rewrite_history ADD COLUMN voice_guidance_version TEXT")
+
+        voice_profile_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(voice_profiles)").fetchall()
+        }
+
+        profile_migrations = (
+            (
+                "analysis_state",
+                "ALTER TABLE voice_profiles "
+                "ADD COLUMN analysis_state TEXT "
+                "NOT NULL DEFAULT 'never_analyzed'",
+            ),
+            (
+                "analysis_analyzer_version",
+                "ALTER TABLE voice_profiles ADD COLUMN analysis_analyzer_version TEXT",
+            ),
+            (
+                "analysis_analyzed_at",
+                "ALTER TABLE voice_profiles ADD COLUMN analysis_analyzed_at TEXT",
+            ),
+            (
+                "analysis_source_sample_ids",
+                "ALTER TABLE voice_profiles ADD COLUMN analysis_source_sample_ids TEXT",
+            ),
+            (
+                "analysis_source_fingerprint",
+                "ALTER TABLE voice_profiles ADD COLUMN analysis_source_fingerprint TEXT",
+            ),
+            (
+                "analysis_sample_count",
+                "ALTER TABLE voice_profiles ADD COLUMN analysis_sample_count INTEGER",
+            ),
+            (
+                "analysis_sufficiency",
+                "ALTER TABLE voice_profiles ADD COLUMN analysis_sufficiency TEXT",
+            ),
+            (
+                "analysis_consistency",
+                "ALTER TABLE voice_profiles ADD COLUMN analysis_consistency TEXT",
+            ),
+        )
+
+        for column_name, statement in profile_migrations:
+            if column_name not in voice_profile_columns:
+                connection.execute(statement)
+
+        voice_sample_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(voice_source_samples)").fetchall()
+        }
+
+        if "sample_position" not in voice_sample_columns:
+            connection.execute(
+                "ALTER TABLE voice_source_samples ADD COLUMN sample_position INTEGER"
+            )
+
+            rows = connection.execute(
+                """
+                SELECT
+                    profile_id,
+                    sample_id
+                FROM voice_source_samples
+                ORDER BY
+                    profile_id,
+                    created_at,
+                    sample_id
+                """
+            ).fetchall()
+
+            positions: dict[str, int] = {}
+
+            for row in rows:
+                profile_id = row["profile_id"]
+                position = positions.get(profile_id, 0)
+
+                connection.execute(
+                    """
+                    UPDATE voice_source_samples
+                    SET sample_position = ?
+                    WHERE sample_id = ?
+                    """,
+                    (
+                        position,
+                        row["sample_id"],
+                    ),
+                )
+
+                positions[profile_id] = position + 1
 
 
 class SQLiteUserRepository:
@@ -642,6 +745,7 @@ class SQLiteVoiceProfileRepository:
                 raise ValueError("Voice profile workspace cannot be changed.")
 
             attributes = profile.style_attributes
+            provenance = profile.analysis_provenance
 
             connection.execute(
                 """
@@ -660,6 +764,14 @@ class SQLiteVoiceProfileRepository:
                     first_person_frequency = ?,
                     contraction_preference = ?,
                     transition_style = ?,
+                    analysis_state = ?,
+                    analysis_analyzer_version = ?,
+                    analysis_analyzed_at = ?,
+                    analysis_source_sample_ids = ?,
+                    analysis_source_fingerprint = ?,
+                    analysis_sample_count = ?,
+                    analysis_sufficiency = ?,
+                    analysis_consistency = ?,
                     created_at = ?,
                     updated_at = ?
                 WHERE profile_id = ?
@@ -678,6 +790,14 @@ class SQLiteVoiceProfileRepository:
                     attributes.first_person_frequency.value,
                     attributes.contraction_preference.value,
                     attributes.transition_style.value,
+                    profile.analysis_state.value,
+                    (provenance.analyzer_version if provenance is not None else None),
+                    (provenance.analyzed_at.isoformat() if provenance is not None else None),
+                    (json.dumps(provenance.source_sample_ids) if provenance is not None else None),
+                    (provenance.source_fingerprint if provenance is not None else None),
+                    (provenance.sample_count if provenance is not None else None),
+                    (provenance.sufficiency.value if provenance is not None else None),
+                    (provenance.consistency.value if provenance is not None else None),
                     profile.created_at.isoformat(),
                     profile.updated_at.isoformat(),
                     profile.profile_id,
@@ -705,6 +825,7 @@ class SQLiteVoiceProfileRepository:
         profile: VoiceProfileRecord,
     ) -> None:
         attributes = profile.style_attributes
+        provenance = profile.analysis_provenance
 
         connection.execute(
             """
@@ -723,12 +844,21 @@ class SQLiteVoiceProfileRepository:
                 first_person_frequency,
                 contraction_preference,
                 transition_style,
+                analysis_state,
+                analysis_analyzer_version,
+                analysis_analyzed_at,
+                analysis_source_sample_ids,
+                analysis_source_fingerprint,
+                analysis_sample_count,
+                analysis_sufficiency,
+                analysis_consistency,
                 created_at,
                 updated_at
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -746,6 +876,14 @@ class SQLiteVoiceProfileRepository:
                 attributes.first_person_frequency.value,
                 attributes.contraction_preference.value,
                 attributes.transition_style.value,
+                profile.analysis_state.value,
+                (provenance.analyzer_version if provenance is not None else None),
+                (provenance.analyzed_at.isoformat() if provenance is not None else None),
+                (json.dumps(provenance.source_sample_ids) if provenance is not None else None),
+                (provenance.source_fingerprint if provenance is not None else None),
+                (provenance.sample_count if provenance is not None else None),
+                (provenance.sufficiency.value if provenance is not None else None),
+                (provenance.consistency.value if provenance is not None else None),
                 profile.created_at.isoformat(),
                 profile.updated_at.isoformat(),
             ),
@@ -763,9 +901,10 @@ class SQLiteVoiceProfileRepository:
                 profile_id,
                 text,
                 label,
+                sample_position,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 (
@@ -773,9 +912,10 @@ class SQLiteVoiceProfileRepository:
                     profile.profile_id,
                     sample.text,
                     sample.label,
+                    position,
                     sample.created_at.isoformat(),
                 )
-                for sample in profile.source_samples
+                for position, sample in enumerate(profile.source_samples)
             ),
         )
 
@@ -790,10 +930,11 @@ class SQLiteVoiceProfileRepository:
                 sample_id,
                 text,
                 label,
+                sample_position,
                 created_at
             FROM voice_source_samples
             WHERE profile_id = ?
-            ORDER BY created_at, sample_id
+            ORDER BY sample_position, sample_id
             """,
             (row["profile_id"],),
         ).fetchall()
@@ -819,6 +960,19 @@ class SQLiteVoiceProfileRepository:
             transition_style=VoiceTransitionStyle(row["transition_style"]),
         )
 
+        provenance = None
+
+        if row["analysis_analyzer_version"] is not None:
+            provenance = VoiceAnalysisProvenance(
+                analyzer_version=row["analysis_analyzer_version"],
+                analyzed_at=datetime.fromisoformat(row["analysis_analyzed_at"]),
+                source_sample_ids=tuple(json.loads(row["analysis_source_sample_ids"])),
+                source_fingerprint=row["analysis_source_fingerprint"],
+                sample_count=row["analysis_sample_count"],
+                sufficiency=VoiceAnalysisSufficiency(row["analysis_sufficiency"]),
+                consistency=VoiceAnalysisConsistency(row["analysis_consistency"]),
+            )
+
         return VoiceProfileRecord(
             profile_id=row["profile_id"],
             workspace_id=row["workspace_id"],
@@ -828,6 +982,8 @@ class SQLiteVoiceProfileRepository:
             status=VoiceProfileStatus(row["status"]),
             source_samples=samples,
             style_attributes=attributes,
+            analysis_state=VoiceAnalysisState(row["analysis_state"]),
+            analysis_provenance=provenance,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )

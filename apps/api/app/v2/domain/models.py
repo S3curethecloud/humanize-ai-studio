@@ -152,6 +152,12 @@ class VoiceSourceSample(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class VoiceAnalysisState(StrEnum):
+    NEVER_ANALYZED = "never_analyzed"
+    CURRENT = "current"
+    STALE = "stale"
+
+
 class VoiceProfileRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -166,6 +172,9 @@ class VoiceProfileRecord(BaseModel):
 
     source_samples: tuple[VoiceSourceSample, ...] = ()
     style_attributes: VoiceStyleAttributes = Field(default_factory=VoiceStyleAttributes)
+
+    analysis_state: VoiceAnalysisState = VoiceAnalysisState.NEVER_ANALYZED
+    analysis_provenance: VoiceAnalysisProvenance | None = None
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -182,6 +191,21 @@ class VoiceAnalysisConsistency(StrEnum):
     COHERENT = "coherent"
     MIXED = "mixed"
     DIVERGENT = "divergent"
+
+
+class VoiceAnalysisProvenance(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    analyzer_version: str
+    analyzed_at: datetime
+    source_sample_ids: tuple[str, ...]
+    source_fingerprint: str
+    sample_count: int
+    sufficiency: VoiceAnalysisSufficiency
+    consistency: VoiceAnalysisConsistency
+
+
+VoiceProfileRecord.model_rebuild()
 
 
 class VoiceAttributeConsistency(BaseModel):

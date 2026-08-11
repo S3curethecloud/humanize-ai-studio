@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.v2.domain.models import (
+    VoiceAnalysisProvenance,
+    VoiceAnalysisState,
     VoiceProfileAnalysisResult,
     VoiceProfileRecord,
     VoiceProfileStatus,
@@ -15,6 +17,9 @@ from app.v2.repositories.interfaces import (
 )
 from app.v2.services.voice_dna_analyzer import (
     VoiceDNAAnalyzer,
+)
+from app.v2.services.voice_sample_fingerprint import (
+    voice_sample_fingerprint,
 )
 from app.v2.services.workspace_service import (
     WorkspaceService,
@@ -148,8 +153,28 @@ class VoiceProfileService:
             operation="update",
         )
 
+        analysis_state = VoiceAnalysisState.NEVER_ANALYZED
+        analysis_provenance = existing.analysis_provenance
+
+        if analysis_provenance is not None:
+            source_fingerprint = voice_sample_fingerprint(profile.source_samples)
+
+            source_changed = source_fingerprint != analysis_provenance.source_fingerprint
+            style_changed = profile.style_attributes != existing.style_attributes
+
+            if (
+                existing.analysis_state is VoiceAnalysisState.STALE
+                or source_changed
+                or style_changed
+            ):
+                analysis_state = VoiceAnalysisState.STALE
+            else:
+                analysis_state = VoiceAnalysisState.CURRENT
+
         updated = profile.model_copy(
             update={
+                "analysis_state": analysis_state,
+                "analysis_provenance": analysis_provenance,
                 "updated_at": datetime.now(UTC),
             }
         )
@@ -176,10 +201,24 @@ class VoiceProfileService:
 
         analysis = self._analyzer.analyze(profile.source_samples)
 
+        analyzed_at = datetime.now(UTC)
+
+        provenance = VoiceAnalysisProvenance(
+            analyzer_version=analysis.evidence.analyzer_version,
+            analyzed_at=analyzed_at,
+            source_sample_ids=tuple(sample.sample_id for sample in profile.source_samples),
+            source_fingerprint=voice_sample_fingerprint(profile.source_samples),
+            sample_count=analysis.evidence.sample_count,
+            sufficiency=analysis.evidence.sufficiency,
+            consistency=(analysis.evidence.sample_consistency.classification),
+        )
+
         updated = profile.model_copy(
             update={
-                "style_attributes": (analysis.style_attributes),
-                "updated_at": datetime.now(UTC),
+                "style_attributes": analysis.style_attributes,
+                "analysis_state": VoiceAnalysisState.CURRENT,
+                "analysis_provenance": provenance,
+                "updated_at": analyzed_at,
             }
         )
 
