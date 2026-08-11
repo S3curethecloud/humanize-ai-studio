@@ -14,6 +14,9 @@ from app.v2.domain.models import (
 from app.v2.repositories.interfaces import (
     RewriteHistoryRepository,
 )
+from app.v2.services.voice_audit_authenticator import (
+    VoiceAuditAuthenticator,
+)
 from app.v2.services.workspace_service import (
     WorkspaceService,
 )
@@ -25,9 +28,11 @@ class RewriteHistoryService:
         *,
         workspace_service: WorkspaceService,
         history: RewriteHistoryRepository,
+        voice_audit_authenticator: VoiceAuditAuthenticator | None = None,
     ) -> None:
         self._workspace_service = workspace_service
         self._history = history
+        self._voice_audit_authenticator = voice_audit_authenticator
 
     def record_rewrite(
         self,
@@ -51,6 +56,12 @@ class RewriteHistoryService:
             else None
         )
 
+        voice_analysis_authenticity = (
+            self._voice_audit_authenticator.sign(voice_analysis_snapshot)
+            if (voice_analysis_snapshot is not None and self._voice_audit_authenticator is not None)
+            else None
+        )
+
         record = RewriteHistoryRecord(
             rewrite_id=(f"history_{uuid4().hex}"),
             workspace_id=workspace_id,
@@ -69,6 +80,7 @@ class RewriteHistoryService:
             voice_guidance_version=voice_guidance_version,
             voice_analysis_snapshot=voice_analysis_snapshot,
             voice_analysis_binding=voice_analysis_binding,
+            voice_analysis_authenticity=voice_analysis_authenticity,
             fallback_used=(response.provider_execution.fallback_used),
             verification_decision=(response.verification.decision.value),
             editorial_quality_decision=(response.editorial_quality.decision.value),
@@ -88,7 +100,39 @@ class RewriteHistoryService:
             user_id=user_id,
         )
 
-        return self._history.list_for_workspace(
+        records = self._history.list_for_workspace(
             workspace_id=workspace_id,
             limit=limit,
         )
+
+        for record in records:
+            self._verify_voice_authenticity(record)
+
+        return records
+
+    def _verify_voice_authenticity(
+        self,
+        record: RewriteHistoryRecord,
+    ) -> None:
+        authenticator = self._voice_audit_authenticator
+
+        if authenticator is None:
+            return
+
+        snapshot = record.voice_analysis_snapshot
+        authenticity = record.voice_analysis_authenticity
+
+        if snapshot is None:
+            if authenticity is not None:
+                raise ValueError("non-voice history must not contain voice analysis authenticity")
+
+            return
+
+        if authenticity is None:
+            raise ValueError("voice analysis authenticity is required")
+
+        if not authenticator.verify(
+            snapshot=snapshot,
+            authenticity=authenticity,
+        ):
+            raise ValueError("voice analysis authenticity verification failed")
