@@ -61,6 +61,11 @@ class WorkspaceRewriteRequest(BaseModel):
         max_length=200,
     )
     rewrite: RewriteRequest
+    voice_profile_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
 
 
 class WorkspaceRewriteResponse(BaseModel):

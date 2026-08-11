@@ -8,6 +8,9 @@ from fastapi import (
 )
 
 from app.v2.api.dependencies import services
+from app.v2.services.voice_rewrite_guidance import (
+    VoiceProfileInactiveError,
+)
 
 __all__ = [
     "router",
@@ -123,21 +126,53 @@ def create_workspace_rewrite(
     request: WorkspaceRewriteRequest,
 ) -> WorkspaceRewriteResponse:
     try:
-        result = services.rewrite.execute(
+        if request.voice_profile_id is None:
+            result = services.rewrite.execute(
+                workspace_id=workspace_id,
+                user_id=request.user_id,
+                request=request.rewrite,
+            )
+
+            return WorkspaceRewriteResponse(
+                rewrite=result.response,
+                history=result.history,
+            )
+
+        voice_rewrite = services.voice_rewrite
+
+        if voice_rewrite is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=("Voice-aware rewrite orchestration is unavailable."),
+            )
+
+        voice_result = voice_rewrite.execute(
             workspace_id=workspace_id,
             user_id=request.user_id,
+            profile_id=request.voice_profile_id,
             request=request.rewrite,
         )
+
+        return WorkspaceRewriteResponse(
+            rewrite=voice_result.response,
+            history=voice_result.history,
+        )
+
+    except VoiceProfileInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
-
-    return WorkspaceRewriteResponse(
-        rewrite=result.response,
-        history=result.history,
-    )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(

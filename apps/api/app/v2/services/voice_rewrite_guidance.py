@@ -103,6 +103,10 @@ _TRANSITION_GUIDANCE = {
 }
 
 
+class VoiceProfileInactiveError(ValueError):
+    pass
+
+
 class VoiceRewriteGuidanceTranslator:
     version = "voice-rewrite-guidance-v1"
 
@@ -216,4 +220,6 @@ class VoiceRewriteGuidanceService:
         profile: VoiceProfileRecord,
     ) -> None:
         if profile.status is not VoiceProfileStatus.ACTIVE:
-            raise ValueError("Voice rewrite guidance requires an active voice profile.")
+            raise VoiceProfileInactiveError(
+                "Voice rewrite guidance requires an active voice profile."
+            )

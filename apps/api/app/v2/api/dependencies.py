@@ -15,6 +15,12 @@ from app.v2.repositories.factory import (
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
+from app.v2.services.voice_aware_provider import (
+    VoiceAwareRewriteProvider,
+)
+from app.v2.services.voice_aware_rewrite_service import (
+    VoiceAwareWorkspaceRewriteService,
+)
 from app.v2.services.voice_profile_service import (
     VoiceProfileService,
 )
@@ -37,6 +43,7 @@ class V2Services:
         self,
         *,
         workflow: RewriteWorkflow | None = None,
+        voice_aware_provider: (VoiceAwareRewriteProvider | None) = None,
         persistence_settings: (V2PersistenceSettings | None) = None,
     ) -> None:
         resolved_persistence = persistence_settings or V2PersistenceSettings.from_environment()
@@ -70,17 +77,34 @@ class V2Services:
         )
 
         resolved_workflow = workflow
+        resolved_voice_provider = voice_aware_provider
 
         if resolved_workflow is None:
-            settings = Settings.from_environment()
-            provider = build_rewrite_provider(settings)
-            resolved_workflow = RewriteWorkflow(provider=provider)
+            if resolved_voice_provider is None:
+                settings = Settings.from_environment()
+                provider = build_rewrite_provider(settings)
+                resolved_voice_provider = VoiceAwareRewriteProvider(
+                    provider=provider,
+                )
+
+            resolved_workflow = RewriteWorkflow(
+                provider=resolved_voice_provider,
+            )
 
         self.rewrite = WorkspaceRewriteService(
             workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
         )
+
+        self.voice_rewrite = None
+
+        if resolved_voice_provider is not None:
+            self.voice_rewrite = VoiceAwareWorkspaceRewriteService(
+                rewrite_service=self.rewrite,
+                guidance_service=(self.voice_rewrite_guidance),
+                provider=resolved_voice_provider,
+            )
 
 
 services = V2Services()
