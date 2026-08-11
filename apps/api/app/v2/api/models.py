@@ -68,9 +68,16 @@ class WorkspaceRewriteRequest(BaseModel):
     )
 
 
+class VoiceRewriteEvidence(BaseModel):
+    applied: bool
+    profile_id: str
+    guidance_version: str
+
+
 class WorkspaceRewriteResponse(BaseModel):
     rewrite: RewriteResponse
     history: RewriteHistoryRecord
+    voice: VoiceRewriteEvidence | None = None
 
 
 class CreateVoiceProfileRequest(BaseModel):

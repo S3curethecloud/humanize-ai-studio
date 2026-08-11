@@ -30,6 +30,7 @@ from app.v2.api.models import (
     VoiceProfileAnalysisResponse,
     VoiceProfileListResponse,
     VoiceProfileResponse,
+    VoiceRewriteEvidence,
     WorkspaceHistoryResponse,
     WorkspaceRewriteRequest,
     WorkspaceRewriteResponse,
@@ -120,6 +121,7 @@ def list_workspace_history(
 @router.post(
     "/workspaces/{workspace_id}/rewrites",
     response_model=WorkspaceRewriteResponse,
+    response_model_exclude_none=True,
 )
 def create_workspace_rewrite(
     workspace_id: str,
@@ -156,6 +158,11 @@ def create_workspace_rewrite(
         return WorkspaceRewriteResponse(
             rewrite=voice_result.response,
             history=voice_result.history,
+            voice=VoiceRewriteEvidence(
+                applied=True,
+                profile_id=(voice_result.guidance.profile_id),
+                guidance_version=(voice_result.guidance.guidance_version),
+            ),
         )
 
     except VoiceProfileInactiveError as exc:

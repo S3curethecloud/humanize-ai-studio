@@ -247,6 +247,15 @@ def test_voice_profile_selection_applies_voice_guidance() -> None:
     assert set(response.json()) == {
         "rewrite",
         "history",
+        "voice",
+    }
+
+    voice = response.json()["voice"]
+
+    assert voice == {
+        "applied": True,
+        "profile_id": profile_id,
+        "guidance_version": ("voice-rewrite-guidance-v1"),
     }
 
 
@@ -373,3 +382,74 @@ def test_voice_api_cannot_override_v1_fact_failure() -> None:
     assert "blocked" in rewrite["workflow_states"]
 
     assert len(provider.requests) == 1
+
+
+def test_non_voice_rewrite_omits_voice_evidence() -> None:
+    provider = RecordingProvider()
+    _configure(provider)
+
+    user_id = _create_user(
+        email="no-voice-evidence@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=_rewrite_payload(
+            user_id=user_id,
+        ),
+    )
+
+    assert response.status_code == 200
+    assert "voice" not in response.json()
+
+
+def test_voice_evidence_matches_selected_profile() -> None:
+    provider = RecordingProvider()
+    _configure(provider)
+
+    user_id = _create_user(
+        email="voice-evidence@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    first_profile_id = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    second_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles"),
+        json={
+            "user_id": user_id,
+            "name": "Second Voice",
+        },
+    )
+
+    assert second_response.status_code == 201
+
+    second_profile_id = cast(
+        str,
+        second_response.json()["profile"]["profile_id"],
+    )
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=_rewrite_payload(
+            user_id=user_id,
+            voice_profile_id=second_profile_id,
+        ),
+    )
+
+    assert response.status_code == 200
+
+    voice = response.json()["voice"]
+
+    assert voice["applied"] is True
+    assert voice["profile_id"] == second_profile_id
+    assert voice["profile_id"] != first_profile_id
+    assert voice["guidance_version"] == "voice-rewrite-guidance-v1"
