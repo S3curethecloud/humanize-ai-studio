@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.domain.models import (
     RewriteRequest,
@@ -134,6 +134,22 @@ class UpdateVoiceProfileRequest(BaseModel):
         | None
     ) = None
     style_attributes: VoiceStyleAttributes | None = None
+
+    @model_validator(mode="after")
+    def reject_null_required_profile_fields(
+        self,
+    ) -> UpdateVoiceProfileRequest:
+        protected_fields = (
+            "name",
+            "source_samples",
+            "style_attributes",
+        )
+
+        for field_name in protected_fields:
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+
+        return self
 
 
 class ArchiveVoiceProfileRequest(BaseModel):

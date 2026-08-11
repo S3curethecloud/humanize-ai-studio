@@ -270,3 +270,102 @@ def test_unknown_voice_profile_returns_404() -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_update_voice_profile_rejects_null_name() -> None:
+    user_id = _create_user(
+        email="null-name@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    response = client.patch(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        json={
+            "user_id": user_id,
+            "name": None,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_voice_profile_rejects_null_source_samples() -> None:
+    user_id = _create_user(
+        email="null-samples@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    response = client.patch(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        json={
+            "user_id": user_id,
+            "source_samples": None,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_voice_profile_rejects_null_style_attributes() -> None:
+    user_id = _create_user(
+        email="null-style@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    response = client.patch(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        json={
+            "user_id": user_id,
+            "style_attributes": None,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_voice_profile_allows_clearing_description() -> None:
+    user_id = _create_user(
+        email="clear-description@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    assert profile["description"] is not None
+
+    response = client.patch(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        json={
+            "user_id": user_id,
+            "description": None,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["profile"]["description"] is None
