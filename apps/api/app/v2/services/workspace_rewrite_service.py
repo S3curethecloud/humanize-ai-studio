@@ -15,6 +15,9 @@ from app.v2.domain.models import (
     RewriteHistoryRecord,
     VoiceRewriteAnalysisSnapshot,
 )
+from app.v2.services.claim_lock_extractor import (
+    ExplicitProtectedTerm,
+)
 from app.v2.services.claim_lock_preparation import (
     ClaimLockPreparationResult,
     ClaimLockPreparationService,
@@ -78,6 +81,10 @@ class WorkspaceRewriteService:
         voice_profile_id: str | None = None,
         voice_guidance_version: str | None = None,
         voice_analysis_snapshot: VoiceRewriteAnalysisSnapshot | None = None,
+        explicit_protected_terms: tuple[
+            ExplicitProtectedTerm,
+            ...,
+        ] = (),
         claim_lock_enforcement_mode: ClaimLockEnforcementMode = (ClaimLockEnforcementMode.STRICT),
     ) -> WorkspaceRewriteResult:
         self._workspace_service.require_membership(
@@ -87,7 +94,8 @@ class WorkspaceRewriteService:
 
         claim_lock_preparation = self._claim_lock_preparation_service.prepare(
             text=request.text,
-            enforcement_mode=(claim_lock_enforcement_mode),
+            explicit_terms=explicit_protected_terms,
+            enforcement_mode=claim_lock_enforcement_mode,
         )
 
         response = self._workflow.execute(request)

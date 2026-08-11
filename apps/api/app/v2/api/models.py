@@ -6,6 +6,9 @@ from app.domain.models import (
     RewriteRequest,
     RewriteResponse,
 )
+from app.v2.domain.claim_lock import (
+    ClaimLockEnforcementMode,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     UserRecord,
@@ -14,6 +17,15 @@ from app.v2.domain.models import (
     VoiceSourceSample,
     VoiceStyleAttributes,
     WorkspaceRecord,
+)
+from app.v2.services.claim_lock_extractor import (
+    ExplicitProtectedTerm,
+)
+from app.v2.services.claim_lock_preparation import (
+    ClaimLockPreparationResult,
+)
+from app.v2.services.claim_lock_validator import (
+    ClaimLockValidationResult,
 )
 
 
@@ -66,6 +78,17 @@ class WorkspaceRewriteRequest(BaseModel):
         min_length=1,
         max_length=200,
     )
+    protected_terms: tuple[
+        ExplicitProtectedTerm,
+        ...,
+    ] = ()
+    claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None
+
+    @property
+    def claim_lock_requested(
+        self,
+    ) -> bool:
+        return bool(self.protected_terms) or "claim_lock_enforcement_mode" in self.model_fields_set
 
 
 class VoiceRewriteEvidence(BaseModel):
@@ -74,10 +97,16 @@ class VoiceRewriteEvidence(BaseModel):
     guidance_version: str
 
 
+class ClaimLockRewriteEvidence(BaseModel):
+    preparation: ClaimLockPreparationResult
+    validation: ClaimLockValidationResult
+
+
 class WorkspaceRewriteResponse(BaseModel):
     rewrite: RewriteResponse
     history: RewriteHistoryRecord
     voice: VoiceRewriteEvidence | None = None
+    claim_lock: ClaimLockRewriteEvidence | None = None
 
 
 class CreateVoiceProfileRequest(BaseModel):

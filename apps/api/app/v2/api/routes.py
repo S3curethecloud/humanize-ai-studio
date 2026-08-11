@@ -8,7 +8,13 @@ from fastapi import (
 )
 
 from app.v2.api.dependencies import services
+from app.v2.domain.claim_lock import (
+    ClaimLockEnforcementMode,
+)
 from app.v2.domain.models import VoiceProfileStatus
+from app.v2.services.claim_lock_validator import (
+    ClaimLockViolationError,
+)
 from app.v2.services.voice_profile_service import (
     VoiceProfileLifecycleError,
 )
@@ -26,6 +32,7 @@ __all__ = [
 from app.v2.api.models import (
     AnalyzeVoiceProfileRequest,
     ArchiveVoiceProfileRequest,
+    ClaimLockRewriteEvidence,
     CreateUserRequest,
     CreateUserResponse,
     CreateVoiceProfileRequest,
@@ -134,16 +141,30 @@ def create_workspace_rewrite(
     request: WorkspaceRewriteRequest,
 ) -> WorkspaceRewriteResponse:
     try:
+        claim_lock_enforcement_mode = (
+            request.claim_lock_enforcement_mode or ClaimLockEnforcementMode.STRICT
+        )
+
         if request.voice_profile_id is None:
             result = services.rewrite.execute(
                 workspace_id=workspace_id,
                 user_id=request.user_id,
                 request=request.rewrite,
+                explicit_protected_terms=(request.protected_terms),
+                claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
             )
 
             return WorkspaceRewriteResponse(
                 rewrite=result.response,
                 history=result.history,
+                claim_lock=(
+                    ClaimLockRewriteEvidence(
+                        preparation=(result.claim_lock_preparation),
+                        validation=(result.claim_lock_validation),
+                    )
+                    if request.claim_lock_requested
+                    else None
+                ),
             )
 
         voice_rewrite = services.voice_rewrite
@@ -159,6 +180,8 @@ def create_workspace_rewrite(
             user_id=request.user_id,
             profile_id=request.voice_profile_id,
             request=request.rewrite,
+            explicit_protected_terms=(request.protected_terms),
+            claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
         )
 
         return WorkspaceRewriteResponse(
@@ -169,8 +192,21 @@ def create_workspace_rewrite(
                 profile_id=(voice_result.guidance.profile_id),
                 guidance_version=(voice_result.guidance.guidance_version),
             ),
+            claim_lock=(
+                ClaimLockRewriteEvidence(
+                    preparation=(voice_result.claim_lock_preparation),
+                    validation=(voice_result.claim_lock_validation),
+                )
+                if request.claim_lock_requested
+                else None
+            ),
         )
 
+    except ClaimLockViolationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except (
         VoiceProfileAnalysisRequiredError,
         VoiceProfileInactiveError,
