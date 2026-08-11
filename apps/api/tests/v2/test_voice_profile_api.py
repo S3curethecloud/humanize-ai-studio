@@ -369,3 +369,141 @@ def test_update_voice_profile_allows_clearing_description() -> None:
 
     assert response.status_code == 200
     assert response.json()["profile"]["description"] is None
+
+
+def test_archived_voice_profile_cannot_be_updated() -> None:
+    user_id = _create_user(
+        email="archived-update@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    archive_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert archive_response.status_code == 200
+
+    update_response = client.patch(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        json={
+            "user_id": user_id,
+            "name": "Should Not Change",
+        },
+    )
+
+    assert update_response.status_code == 409
+
+
+def test_archived_voice_profile_cannot_be_analyzed() -> None:
+    user_id = _create_user(
+        email="archived-analyze@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    archive_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert archive_response.status_code == 200
+
+    analyze_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/analyze"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert analyze_response.status_code == 409
+
+
+def test_voice_profile_archive_is_idempotent() -> None:
+    user_id = _create_user(
+        email="archive-idempotent@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    first_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert first_response.status_code == 200
+
+    first_profile = first_response.json()["profile"]
+
+    second_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert second_response.status_code == 200
+
+    second_profile = second_response.json()["profile"]
+
+    assert first_profile["status"] == "archived"
+    assert second_profile["status"] == "archived"
+    assert second_profile["updated_at"] == first_profile["updated_at"]
+
+
+def test_archived_voice_profile_remains_readable() -> None:
+    user_id = _create_user(
+        email="archived-readable@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+    profile_id = cast(str, profile["profile_id"])
+
+    archive_response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/archive"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert archive_response.status_code == 200
+
+    get_response = client.get(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        params={
+            "user_id": user_id,
+        },
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.json()["profile"]["status"] == "archived"

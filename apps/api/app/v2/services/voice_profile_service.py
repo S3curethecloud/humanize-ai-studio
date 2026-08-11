@@ -21,6 +21,10 @@ from app.v2.services.workspace_service import (
 )
 
 
+class VoiceProfileLifecycleError(ValueError):
+    pass
+
+
 class VoiceProfileService:
     def __init__(
         self,
@@ -137,6 +141,11 @@ class VoiceProfileService:
             workspace_id=workspace_id,
         )
 
+        self._require_active_profile(
+            existing,
+            operation="update",
+        )
+
         updated = profile.model_copy(
             update={
                 "updated_at": datetime.now(UTC),
@@ -156,6 +165,11 @@ class VoiceProfileService:
             workspace_id=workspace_id,
             user_id=user_id,
             profile_id=profile_id,
+        )
+
+        self._require_active_profile(
+            profile,
+            operation="analyze",
         )
 
         analysis = self._analyzer.analyze(profile.source_samples)
@@ -187,14 +201,28 @@ class VoiceProfileService:
             profile_id=profile_id,
         )
 
+        if profile.status is VoiceProfileStatus.ARCHIVED:
+            return profile
+
         archived = profile.model_copy(
             update={
-                "status": (VoiceProfileStatus.ARCHIVED),
+                "status": VoiceProfileStatus.ARCHIVED,
                 "updated_at": datetime.now(UTC),
             }
         )
 
         return self._profiles.update(archived)
+
+    def _require_active_profile(
+        self,
+        profile: VoiceProfileRecord,
+        *,
+        operation: str,
+    ) -> None:
+        if profile.status is not VoiceProfileStatus.ACTIVE:
+            raise VoiceProfileLifecycleError(
+                f"Archived voice profiles cannot be used for {operation}."
+            )
 
     def _require_profile_workspace(
         self,

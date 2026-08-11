@@ -8,6 +8,9 @@ from fastapi import (
 )
 
 from app.v2.api.dependencies import services
+from app.v2.services.voice_profile_service import (
+    VoiceProfileLifecycleError,
+)
 from app.v2.services.voice_rewrite_guidance import (
     VoiceProfileInactiveError,
 )
@@ -322,6 +325,11 @@ def update_voice_profile(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
+    except VoiceProfileLifecycleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -399,6 +407,11 @@ def analyze_voice_profile(
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except VoiceProfileLifecycleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
     except ValueError as exc:
