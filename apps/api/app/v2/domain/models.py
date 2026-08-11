@@ -177,6 +177,32 @@ class VoiceAnalysisSufficiency(StrEnum):
     STRONG = "strong"
 
 
+class VoiceAnalysisConsistency(StrEnum):
+    NOT_APPLICABLE = "not_applicable"
+    COHERENT = "coherent"
+    MIXED = "mixed"
+    DIVERGENT = "divergent"
+
+
+class VoiceAttributeConsistency(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    attribute: str
+    consistent: bool | None
+    observed_values: tuple[str, ...]
+
+
+class VoiceSampleConsistencyEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    classification: VoiceAnalysisConsistency
+    agreement_ratio: float | None
+    consistent_attribute_count: int
+    total_attribute_count: int = 8
+    divergent_attributes: tuple[str, ...]
+    attributes: tuple[VoiceAttributeConsistency, ...]
+
+
 class VoiceAnalysisSignal(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -192,6 +218,7 @@ class VoiceAnalysisEvidence(BaseModel):
 
     analyzer_version: str = "voice-dna-v1"
     sufficiency: VoiceAnalysisSufficiency
+    sample_consistency: VoiceSampleConsistencyEvidence
     sample_count: int
     character_count: int
     word_count: int

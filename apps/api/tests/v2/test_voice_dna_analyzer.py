@@ -8,6 +8,7 @@ from app.v2.domain.models import (
     VoiceFormality,
     VoiceSentenceLength,
     VoiceSourceSample,
+    VoiceStyleAttributes,
     VoiceTransitionStyle,
     VoiceWarmth,
 )
@@ -223,3 +224,203 @@ def test_voice_dna_under_three_sentences_is_insufficient_even_with_many_words() 
     assert result.evidence.word_count >= 40
     assert result.evidence.sentence_count == 2
     assert result.evidence.sufficiency.value == "insufficient"
+
+
+def test_voice_dna_single_sample_consistency_is_not_applicable() -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    result = analyzer.analyze(
+        (
+            _sample(
+                "Ship the update today. Review the evidence now.",
+            ),
+        )
+    )
+
+    consistency = result.evidence.sample_consistency
+
+    assert consistency.classification.value == "not_applicable"
+    assert consistency.agreement_ratio is None
+    assert consistency.consistent_attribute_count == 0
+    assert consistency.total_attribute_count == 8
+    assert consistency.divergent_attributes == ()
+    assert len(consistency.attributes) == 8
+    assert all(attribute.consistent is None for attribute in consistency.attributes)
+
+
+def test_voice_dna_consistency_exact_75_percent_is_coherent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    first = VoiceStyleAttributes()
+    second = first.model_copy(
+        update={
+            "formality": VoiceFormality.FORMAL,
+            "warmth": VoiceWarmth.WARM,
+        }
+    )
+
+    sample_attributes = {
+        "First sample.": first,
+        "Second sample.": second,
+    }
+
+    monkeypatch.setattr(
+        analyzer,
+        "_style_attributes_for_text",
+        lambda text: sample_attributes[text],
+    )
+
+    result = analyzer.analyze(
+        (
+            _sample(
+                "First sample.",
+                sample_id="sample_1",
+            ),
+            _sample(
+                "Second sample.",
+                sample_id="sample_2",
+            ),
+        )
+    )
+
+    consistency = result.evidence.sample_consistency
+
+    assert consistency.consistent_attribute_count == 6
+    assert consistency.total_attribute_count == 8
+    assert consistency.agreement_ratio == 0.75
+    assert consistency.classification.value == "coherent"
+    assert consistency.divergent_attributes == (
+        "formality",
+        "warmth",
+    )
+
+
+def test_voice_dna_consistency_exact_50_percent_is_mixed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    first = VoiceStyleAttributes()
+    second = first.model_copy(
+        update={
+            "formality": VoiceFormality.FORMAL,
+            "sentence_length": VoiceSentenceLength.LONG,
+            "directness": VoiceDirectness.INDIRECT,
+            "warmth": VoiceWarmth.WARM,
+        }
+    )
+
+    sample_attributes = {
+        "First sample.": first,
+        "Second sample.": second,
+    }
+
+    monkeypatch.setattr(
+        analyzer,
+        "_style_attributes_for_text",
+        lambda text: sample_attributes[text],
+    )
+
+    result = analyzer.analyze(
+        (
+            _sample(
+                "First sample.",
+                sample_id="sample_1",
+            ),
+            _sample(
+                "Second sample.",
+                sample_id="sample_2",
+            ),
+        )
+    )
+
+    consistency = result.evidence.sample_consistency
+
+    assert consistency.consistent_attribute_count == 4
+    assert consistency.total_attribute_count == 8
+    assert consistency.agreement_ratio == 0.5
+    assert consistency.classification.value == "mixed"
+    assert consistency.divergent_attributes == (
+        "formality",
+        "sentence_length",
+        "directness",
+        "warmth",
+    )
+
+
+def test_voice_dna_consistency_below_50_percent_is_divergent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    first = VoiceStyleAttributes()
+    second = first.model_copy(
+        update={
+            "formality": VoiceFormality.FORMAL,
+            "sentence_length": VoiceSentenceLength.LONG,
+            "directness": VoiceDirectness.INDIRECT,
+            "warmth": VoiceWarmth.WARM,
+            "concision": VoiceConcision.EXPANSIVE,
+        }
+    )
+
+    sample_attributes = {
+        "First sample.": first,
+        "Second sample.": second,
+    }
+
+    monkeypatch.setattr(
+        analyzer,
+        "_style_attributes_for_text",
+        lambda text: sample_attributes[text],
+    )
+
+    result = analyzer.analyze(
+        (
+            _sample(
+                "First sample.",
+                sample_id="sample_1",
+            ),
+            _sample(
+                "Second sample.",
+                sample_id="sample_2",
+            ),
+        )
+    )
+
+    consistency = result.evidence.sample_consistency
+
+    assert consistency.consistent_attribute_count == 3
+    assert consistency.total_attribute_count == 8
+    assert consistency.agreement_ratio == 0.375
+    assert consistency.classification.value == "divergent"
+    assert consistency.divergent_attributes == (
+        "formality",
+        "sentence_length",
+        "directness",
+        "warmth",
+        "concision",
+    )
+
+
+def test_voice_dna_rejects_wordless_non_empty_sample() -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    with pytest.raises(
+        ValueError,
+        match="every non-empty source sample to contain words",
+    ):
+        analyzer.analyze(
+            (
+                _sample(
+                    "Ship the update today.",
+                    sample_id="sample_1",
+                ),
+                _sample(
+                    "...",
+                    sample_id="sample_2",
+                ),
+            )
+        )

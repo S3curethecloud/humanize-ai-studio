@@ -137,6 +137,17 @@ def test_analyze_voice_profile_over_http() -> None:
     assert body["profile"]["profile_id"] == profile_id
     assert body["evidence"]["analyzer_version"] == "voice-dna-v1"
     assert body["evidence"]["sufficiency"] == "insufficient"
+
+    consistency = body["evidence"]["sample_consistency"]
+
+    assert consistency["classification"] == "not_applicable"
+    assert consistency["agreement_ratio"] is None
+    assert consistency["consistent_attribute_count"] == 0
+    assert consistency["total_attribute_count"] == 8
+    assert consistency["divergent_attributes"] == []
+    assert len(consistency["attributes"]) == 8
+    assert all(attribute["consistent"] is None for attribute in consistency["attributes"])
+
     assert len(body["evidence"]["signals"]) == 8
     assert body["profile"]["style_attributes"]["sentence_length"] == "short"
     assert body["profile"]["style_attributes"]["directness"] == "direct"
@@ -257,3 +268,103 @@ def test_cross_workspace_voice_analysis_is_forbidden() -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_analyze_voice_profile_exposes_coherent_sample_consistency() -> None:
+    user_id = _create_user(
+        email="coherent-owner@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+        name="Coherent Voice Workspace",
+    )
+
+    sample_text = (
+        "We review the architecture carefully. "
+        "We document the technical rationale clearly. "
+        "We verify the operational evidence before approval."
+    )
+
+    profile_id = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        source_samples=[
+            {
+                "sample_id": "sample_1",
+                "text": sample_text,
+            },
+            {
+                "sample_id": "sample_2",
+                "text": sample_text,
+            },
+        ],
+    )
+
+    response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/analyze"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+    consistency = body["evidence"]["sample_consistency"]
+
+    assert consistency["classification"] == "coherent"
+    assert consistency["agreement_ratio"] == 1.0
+    assert consistency["consistent_attribute_count"] == 8
+    assert consistency["total_attribute_count"] == 8
+    assert consistency["divergent_attributes"] == []
+    assert len(consistency["attributes"]) == 8
+    assert all(attribute["consistent"] is True for attribute in consistency["attributes"])
+
+    get_response = client.get(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}"),
+        params={
+            "user_id": user_id,
+        },
+    )
+
+    assert get_response.status_code == 200
+
+    retrieved_body = get_response.json()
+
+    assert retrieved_body["profile"]["style_attributes"] == body["profile"]["style_attributes"]
+    assert "evidence" not in retrieved_body
+
+
+def test_analyze_voice_profile_rejects_wordless_source_sample() -> None:
+    user_id = _create_user(
+        email="wordless-owner@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+        name="Wordless Sample Workspace",
+    )
+
+    profile_id = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        source_samples=[
+            {
+                "sample_id": "sample_1",
+                "text": "Ship the update today.",
+            },
+            {
+                "sample_id": "sample_2",
+                "text": "...",
+            },
+        ],
+    )
+
+    response = client.post(
+        (f"/api/v2/workspaces/{workspace_id}/voice-profiles/{profile_id}/analyze"),
+        json={
+            "user_id": user_id,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "every non-empty source sample to contain words" in response.json()["detail"]

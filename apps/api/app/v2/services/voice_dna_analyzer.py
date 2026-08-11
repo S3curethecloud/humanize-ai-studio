@@ -3,15 +3,18 @@ from __future__ import annotations
 import re
 
 from app.v2.domain.models import (
+    VoiceAnalysisConsistency,
     VoiceAnalysisEvidence,
     VoiceAnalysisResult,
     VoiceAnalysisSignal,
     VoiceAnalysisSufficiency,
+    VoiceAttributeConsistency,
     VoiceConcision,
     VoiceContractionPreference,
     VoiceDirectness,
     VoiceFirstPersonFrequency,
     VoiceFormality,
+    VoiceSampleConsistencyEvidence,
     VoiceSentenceLength,
     VoiceSourceSample,
     VoiceStyleAttributes,
@@ -109,6 +112,12 @@ class VoiceDNAAnalyzer:
 
         if not texts:
             raise ValueError("Voice analysis requires at least one non-empty source sample.")
+
+        for text in texts:
+            if not _WORD_PATTERN.findall(text):
+                raise ValueError(
+                    "Voice analysis requires every non-empty source sample to contain words."
+                )
 
         combined = "\n".join(texts)
 
@@ -250,6 +259,9 @@ class VoiceDNAAnalyzer:
                 word_count=word_count,
                 sentence_count=sentence_count,
             ),
+            sample_consistency=self._sample_consistency(
+                texts,
+            ),
             sample_count=len(texts),
             character_count=len(combined),
             word_count=word_count,
@@ -260,6 +272,139 @@ class VoiceDNAAnalyzer:
         return VoiceAnalysisResult(
             style_attributes=attributes,
             evidence=evidence,
+        )
+
+    def _sample_consistency(
+        self,
+        texts: tuple[str, ...],
+    ) -> VoiceSampleConsistencyEvidence:
+        sample_attributes = tuple(self._style_attributes_for_text(text) for text in texts)
+
+        attribute_names = (
+            "formality",
+            "sentence_length",
+            "directness",
+            "warmth",
+            "concision",
+            "first_person_frequency",
+            "contraction_preference",
+            "transition_style",
+        )
+
+        if len(sample_attributes) == 1:
+            attributes = tuple(
+                VoiceAttributeConsistency(
+                    attribute=attribute,
+                    consistent=None,
+                    observed_values=(
+                        getattr(
+                            sample_attributes[0],
+                            attribute,
+                        ).value,
+                    ),
+                )
+                for attribute in attribute_names
+            )
+
+            return VoiceSampleConsistencyEvidence(
+                classification=(VoiceAnalysisConsistency.NOT_APPLICABLE),
+                agreement_ratio=None,
+                consistent_attribute_count=0,
+                divergent_attributes=(),
+                attributes=attributes,
+            )
+
+        attribute_evidence: list[VoiceAttributeConsistency] = []
+
+        divergent_attributes: list[str] = []
+        consistent_count = 0
+
+        for attribute in attribute_names:
+            observed_values = tuple(
+                sorted(
+                    {
+                        getattr(
+                            sample,
+                            attribute,
+                        ).value
+                        for sample in sample_attributes
+                    }
+                )
+            )
+
+            consistent = len(observed_values) == 1
+
+            if consistent:
+                consistent_count += 1
+            else:
+                divergent_attributes.append(attribute)
+
+            attribute_evidence.append(
+                VoiceAttributeConsistency(
+                    attribute=attribute,
+                    consistent=consistent,
+                    observed_values=observed_values,
+                )
+            )
+
+        agreement_ratio = consistent_count / len(attribute_names)
+
+        if agreement_ratio >= 0.75:
+            classification = VoiceAnalysisConsistency.COHERENT
+        elif agreement_ratio >= 0.5:
+            classification = VoiceAnalysisConsistency.MIXED
+        else:
+            classification = VoiceAnalysisConsistency.DIVERGENT
+
+        return VoiceSampleConsistencyEvidence(
+            classification=classification,
+            agreement_ratio=round(
+                agreement_ratio,
+                4,
+            ),
+            consistent_attribute_count=consistent_count,
+            divergent_attributes=tuple(divergent_attributes),
+            attributes=tuple(attribute_evidence),
+        )
+
+    def _style_attributes_for_text(
+        self,
+        text: str,
+    ) -> VoiceStyleAttributes:
+        words = _WORD_PATTERN.findall(text)
+
+        sentences = self._sentences((text,))
+
+        word_count = len(words)
+        sentence_count = len(sentences)
+
+        average_sentence_words = word_count / sentence_count
+
+        contraction_count = len(_CONTRACTION_PATTERN.findall(text))
+        first_person_count = len(_FIRST_PERSON_PATTERN.findall(text))
+        hedge_count = len(_HEDGE_PATTERN.findall(text))
+        warmth_count = len(_WARMTH_PATTERN.findall(text))
+        transition_count = len(_EXPLICIT_TRANSITION_PATTERN.findall(text))
+        formal_count = len(_FORMAL_PATTERN.findall(text))
+        casual_count = len(_CASUAL_PATTERN.findall(text))
+
+        first_person_ratio = first_person_count / word_count
+        contraction_ratio = contraction_count / sentence_count
+        hedge_ratio = hedge_count / sentence_count
+        warmth_ratio = warmth_count / sentence_count
+        transition_ratio = transition_count / sentence_count
+
+        formality_score = formal_count - casual_count - contraction_count
+
+        return VoiceStyleAttributes(
+            formality=self._formality(formality_score),
+            sentence_length=self._sentence_length(average_sentence_words),
+            directness=self._directness(hedge_ratio),
+            warmth=self._warmth(warmth_ratio),
+            concision=self._concision(average_sentence_words),
+            first_person_frequency=(self._first_person_frequency(first_person_ratio)),
+            contraction_preference=(self._contraction_preference(contraction_ratio)),
+            transition_style=(self._transition_style(transition_ratio)),
         )
 
     def _sufficiency(
