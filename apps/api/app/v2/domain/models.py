@@ -14,6 +14,14 @@ from pydantic import (
     model_validator,
 )
 
+from app.v2.domain.claim_lock import (
+    ClaimLock,
+    ClaimLockEnforcementMode,
+)
+from app.v2.domain.claim_lock_audit import (
+    ClaimLockValidationAuditSnapshot,
+)
+
 
 class WorkspaceRole(StrEnum):
     OWNER = "owner"
@@ -194,6 +202,10 @@ class RewriteHistoryRecord(BaseModel):
     voice_analysis_binding: VoiceRewriteAnalysisBinding | None = None
     voice_analysis_authenticity: VoiceRewriteAnalysisAuthenticity | None = None
 
+    claim_lock_snapshot: ClaimLock | None = None
+    claim_lock_validation: ClaimLockValidationAuditSnapshot | None = None
+    claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None
+
     fallback_used: bool
     verification_decision: str
     editorial_quality_decision: str
@@ -230,6 +242,31 @@ class RewriteHistoryRecord(BaseModel):
             and not self.voice_analysis_binding.matches(self.voice_analysis_snapshot)
         ):
             raise ValueError("voice analysis binding does not match snapshot")
+
+        claim_lock_audit_fields = (
+            self.claim_lock_snapshot,
+            self.claim_lock_validation,
+            self.claim_lock_enforcement_mode,
+        )
+
+        claim_lock_present = tuple(value is not None for value in claim_lock_audit_fields)
+
+        if any(claim_lock_present) and not all(claim_lock_present):
+            raise ValueError("claim lock audit fields must be all present or all absent")
+
+        if (
+            self.claim_lock_snapshot is not None
+            and self.claim_lock_validation is not None
+            and self.claim_lock_enforcement_mode is not None
+        ):
+            if self.claim_lock_snapshot.lock_id != self.claim_lock_validation.lock_id:
+                raise ValueError("claim lock validation lock_id must match snapshot")
+
+            if self.claim_lock_snapshot.enforcement_mode is not self.claim_lock_enforcement_mode:
+                raise ValueError("claim lock snapshot enforcement mode mismatch")
+
+            if self.claim_lock_validation.enforcement_mode is not self.claim_lock_enforcement_mode:
+                raise ValueError("claim lock validation enforcement mode mismatch")
 
         return self
 

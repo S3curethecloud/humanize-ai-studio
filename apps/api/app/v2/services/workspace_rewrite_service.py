@@ -8,6 +8,9 @@ from app.domain.models import (
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.claim_lock_audit import (
+    ClaimLockValidationAuditSnapshot,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     VoiceRewriteAnalysisSnapshot,
@@ -101,6 +104,14 @@ class WorkspaceRewriteService:
         ):
             raise ClaimLockViolationError(claim_lock_validation)
 
+        claim_lock_validation_audit = (
+            ClaimLockValidationAuditSnapshot.model_validate(
+                claim_lock_validation.model_dump(mode="json")
+            )
+            if claim_lock_preparation.claim_lock is not None
+            else None
+        )
+
         history = self._history_service.record_rewrite(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -109,6 +120,13 @@ class WorkspaceRewriteService:
             voice_profile_id=voice_profile_id,
             voice_guidance_version=voice_guidance_version,
             voice_analysis_snapshot=voice_analysis_snapshot,
+            claim_lock_snapshot=(claim_lock_preparation.claim_lock),
+            claim_lock_validation=(claim_lock_validation_audit),
+            claim_lock_enforcement_mode=(
+                claim_lock_enforcement_mode
+                if claim_lock_preparation.claim_lock is not None
+                else None
+            ),
         )
 
         return WorkspaceRewriteResult(
