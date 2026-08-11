@@ -149,3 +149,77 @@ def test_voice_dna_evidence_is_deterministic() -> None:
     assert first.evidence.word_count > 0
     assert first.evidence.sentence_count == 2
     assert len(first.evidence.signals) == 8
+
+
+def test_voice_dna_marks_small_evidence_insufficient() -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    result = analyzer.analyze(
+        (_sample("Ship the change today. Review the evidence now. Document the result."),)
+    )
+
+    assert result.evidence.sufficiency.value == "insufficient"
+    assert result.evidence.word_count < 40
+    assert result.evidence.sentence_count == 3
+    assert len(result.evidence.signals) == 8
+
+
+def test_voice_dna_marks_single_substantial_sample_limited() -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    sentence = (
+        "We review the architecture carefully and document "
+        "the technical rationale before approving each change."
+    )
+
+    result = analyzer.analyze((_sample(" ".join(sentence for _ in range(8))),))
+
+    assert result.evidence.word_count >= 40
+    assert result.evidence.sentence_count >= 6
+    assert result.evidence.sample_count == 1
+    assert result.evidence.sufficiency.value == "limited"
+    assert len(result.evidence.signals) == 8
+
+
+def test_voice_dna_marks_multi_sample_evidence_strong() -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    first_sentence = (
+        "We document architecture decisions clearly and preserve "
+        "the reasoning behind each approved technical change."
+    )
+    second_sentence = (
+        "Our reviews explain operational impact, security constraints, "
+        "implementation tradeoffs, and the evidence required for approval."
+    )
+
+    result = analyzer.analyze(
+        (
+            _sample(
+                " ".join(first_sentence for _ in range(5)),
+                sample_id="sample_1",
+            ),
+            _sample(
+                " ".join(second_sentence for _ in range(5)),
+                sample_id="sample_2",
+            ),
+        )
+    )
+
+    assert result.evidence.word_count >= 120
+    assert result.evidence.sentence_count >= 6
+    assert result.evidence.sample_count >= 2
+    assert result.evidence.sufficiency.value == "strong"
+    assert len(result.evidence.signals) == 8
+
+
+def test_voice_dna_under_three_sentences_is_insufficient_even_with_many_words() -> None:
+    analyzer = VoiceDNAAnalyzer()
+
+    long_sentence = " ".join("architecture" for _ in range(45))
+
+    result = analyzer.analyze((_sample(f"{long_sentence}. {long_sentence}."),))
+
+    assert result.evidence.word_count >= 40
+    assert result.evidence.sentence_count == 2
+    assert result.evidence.sufficiency.value == "insufficient"

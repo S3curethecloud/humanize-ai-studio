@@ -81,6 +81,7 @@ def test_analysis_updates_profile_attributes() -> None:
 
     assert result.profile.style_attributes.sentence_length is VoiceSentenceLength.SHORT
     assert result.profile.style_attributes.directness is VoiceDirectness.DIRECT
+    assert result.evidence.sufficiency.value == "insufficient"
 
     retrieved = services.voice_profiles.get_profile(
         workspace_id=workspace_id,
@@ -143,6 +144,7 @@ def test_sqlite_analysis_survives_service_recreation(
 
     assert retrieved.style_attributes == result.profile.style_attributes
     assert result.evidence.analyzer_version == "voice-dna-v1"
+    assert result.evidence.sufficiency.value == "insufficient"
 
 
 def test_analysis_rejects_profile_without_samples() -> None:

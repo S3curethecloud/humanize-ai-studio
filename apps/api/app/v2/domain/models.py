@@ -171,6 +171,12 @@ class VoiceProfileRecord(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class VoiceAnalysisSufficiency(StrEnum):
+    INSUFFICIENT = "insufficient"
+    LIMITED = "limited"
+    STRONG = "strong"
+
+
 class VoiceAnalysisSignal(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -185,6 +191,7 @@ class VoiceAnalysisEvidence(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     analyzer_version: str = "voice-dna-v1"
+    sufficiency: VoiceAnalysisSufficiency
     sample_count: int
     character_count: int
     word_count: int

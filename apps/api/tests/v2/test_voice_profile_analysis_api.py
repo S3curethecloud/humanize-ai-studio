@@ -136,6 +136,7 @@ def test_analyze_voice_profile_over_http() -> None:
 
     assert body["profile"]["profile_id"] == profile_id
     assert body["evidence"]["analyzer_version"] == "voice-dna-v1"
+    assert body["evidence"]["sufficiency"] == "insufficient"
     assert len(body["evidence"]["signals"]) == 8
     assert body["profile"]["style_attributes"]["sentence_length"] == "short"
     assert body["profile"]["style_attributes"]["directness"] == "direct"
@@ -148,7 +149,11 @@ def test_analyze_voice_profile_over_http() -> None:
     )
 
     assert get_response.status_code == 200
-    assert get_response.json()["profile"]["style_attributes"] == body["profile"]["style_attributes"]
+
+    retrieved_body = get_response.json()
+
+    assert retrieved_body["profile"]["style_attributes"] == body["profile"]["style_attributes"]
+    assert "evidence" not in retrieved_body
 
 
 def test_analyze_empty_voice_profile_returns_422() -> None:

@@ -6,6 +6,7 @@ from app.v2.domain.models import (
     VoiceAnalysisEvidence,
     VoiceAnalysisResult,
     VoiceAnalysisSignal,
+    VoiceAnalysisSufficiency,
     VoiceConcision,
     VoiceContractionPreference,
     VoiceDirectness,
@@ -244,6 +245,11 @@ class VoiceDNAAnalyzer:
 
         evidence = VoiceAnalysisEvidence(
             analyzer_version=self.version,
+            sufficiency=self._sufficiency(
+                sample_count=len(texts),
+                word_count=word_count,
+                sentence_count=sentence_count,
+            ),
             sample_count=len(texts),
             character_count=len(combined),
             word_count=word_count,
@@ -255,6 +261,21 @@ class VoiceDNAAnalyzer:
             style_attributes=attributes,
             evidence=evidence,
         )
+
+    def _sufficiency(
+        self,
+        *,
+        sample_count: int,
+        word_count: int,
+        sentence_count: int,
+    ) -> VoiceAnalysisSufficiency:
+        if word_count < 40 or sentence_count < 3:
+            return VoiceAnalysisSufficiency.INSUFFICIENT
+
+        if word_count < 120 or sample_count < 2 or sentence_count < 6:
+            return VoiceAnalysisSufficiency.LIMITED
+
+        return VoiceAnalysisSufficiency.STRONG
 
     def _sentences(
         self,
