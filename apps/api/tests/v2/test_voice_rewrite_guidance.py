@@ -55,10 +55,12 @@ def _analysis_snapshot() -> VoiceRewriteAnalysisSnapshot:
             0,
             tzinfo=UTC,
         ),
+        source_sample_ids=("sample_1",),
         source_fingerprint="a" * 64,
         sample_count=1,
         sufficiency="limited",
         consistency="not_applicable",
+        style_attributes=VoiceStyleAttributes(),
     )
 
 

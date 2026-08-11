@@ -60,6 +60,7 @@ class VoiceRewriteAnalysisSnapshot(BaseModel):
         max_length=200,
     )
     analyzed_at: datetime
+    source_sample_ids: tuple[str, ...]
     source_fingerprint: str = Field(
         min_length=64,
         max_length=64,
@@ -79,6 +80,7 @@ class VoiceRewriteAnalysisSnapshot(BaseModel):
         "mixed",
         "divergent",
     ]
+    style_attributes: VoiceStyleAttributes
 
     @field_validator("analyzed_at")
     @classmethod
@@ -90,6 +92,18 @@ class VoiceRewriteAnalysisSnapshot(BaseModel):
             raise ValueError("analyzed_at must be timezone-aware")
 
         return value
+
+    @model_validator(mode="after")
+    def require_complete_source_provenance(
+        self,
+    ) -> VoiceRewriteAnalysisSnapshot:
+        if len(self.source_sample_ids) != self.sample_count:
+            raise ValueError("sample_count must match source_sample_ids length")
+
+        if any(not sample_id.strip() for sample_id in self.source_sample_ids):
+            raise ValueError("source_sample_ids must contain only non-empty identifiers")
+
+        return self
 
 
 class RewriteHistoryRecord(BaseModel):
@@ -278,6 +292,7 @@ class VoiceAnalysisProvenance(BaseModel):
 
 
 VoiceProfileRecord.model_rebuild()
+VoiceRewriteAnalysisSnapshot.model_rebuild()
 
 
 class VoiceAttributeConsistency(BaseModel):

@@ -149,6 +149,8 @@ def _create_voice_rewrite(
     assert result.history.voice_analysis_snapshot.sample_count == provenance.sample_count
     assert result.history.voice_analysis_snapshot.sufficiency == provenance.sufficiency.value
     assert result.history.voice_analysis_snapshot.consistency == provenance.consistency.value
+    assert result.history.voice_analysis_snapshot.source_sample_ids == provenance.source_sample_ids
+    assert result.history.voice_analysis_snapshot.style_attributes == profile.style_attributes
 
     return (
         user.user_id,
@@ -176,6 +178,8 @@ def test_voice_evidence_is_persisted_in_memory_history() -> None:
     assert records[0].voice_analysis_snapshot.analysis_state == "current"
     assert records[0].voice_analysis_snapshot.analyzer_version == "voice-dna-v1"
     assert records[0].voice_analysis_snapshot.source_fingerprint
+    assert records[0].voice_analysis_snapshot.source_sample_ids == ("history_sample_1",)
+    assert records[0].voice_analysis_snapshot.style_attributes
 
 
 def test_voice_evidence_survives_sqlite_service_restart(
@@ -207,6 +211,8 @@ def test_voice_evidence_survives_sqlite_service_restart(
     assert records[0].voice_analysis_snapshot.analysis_state == "current"
     assert records[0].voice_analysis_snapshot.analyzer_version == "voice-dna-v1"
     assert records[0].voice_analysis_snapshot.source_fingerprint
+    assert records[0].voice_analysis_snapshot.source_sample_ids == ("history_sample_1",)
+    assert records[0].voice_analysis_snapshot.style_attributes
 
 
 def test_initialize_database_migrates_legacy_history_table(
@@ -269,6 +275,9 @@ def test_rewrite_snapshot_survives_profile_reanalysis() -> None:
     original_snapshot = before_records[0].voice_analysis_snapshot
 
     assert original_snapshot is not None
+    assert original_snapshot.source_sample_ids == ("history_sample_1",)
+
+    original_style_attributes = original_snapshot.style_attributes
 
     profile = services.voice_profiles.get_profile(
         workspace_id=workspace_id,
@@ -314,6 +323,8 @@ def test_rewrite_snapshot_survives_profile_reanalysis() -> None:
 
     assert len(after_records) == 1
     assert after_records[0].voice_analysis_snapshot == original_snapshot
+    assert after_records[0].voice_analysis_snapshot.style_attributes == original_style_attributes
+    assert after_records[0].voice_analysis_snapshot.source_sample_ids == ("history_sample_1",)
 
 
 @pytest.mark.parametrize(
@@ -624,6 +635,94 @@ def test_sqlite_history_rejects_blank_voice_audit_identifiers(
         connection.execute(
             statements[column_name],
             (row[0],),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match=expected_fragment,
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_fragment"),
+    (
+        (
+            {
+                "sample_count": 2,
+            },
+            "sample_count must match source_sample_ids length",
+        ),
+        (
+            {
+                "source_sample_ids": [],
+            },
+            "sample_count must match source_sample_ids length",
+        ),
+        (
+            {
+                "source_sample_ids": [""],
+            },
+            "source_sample_ids must contain only non-empty identifiers",
+        ),
+        (
+            {
+                "source_sample_ids": ["   "],
+            },
+            "source_sample_ids must contain only non-empty identifiers",
+        ),
+    ),
+)
+def test_sqlite_history_rejects_incomplete_source_provenance(
+    tmp_path: Path,
+    mutation: dict[str, object],
+    expected_fragment: str,
+) -> None:
+    database_path = tmp_path / "incomplete-source-provenance.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                rewrite_id,
+                voice_analysis_snapshot
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+        assert row[1] is not None
+
+        snapshot = json.loads(row[1])
+        snapshot.update(mutation)
+
+        connection.execute(
+            """
+            UPDATE rewrite_history
+            SET voice_analysis_snapshot = ?
+            WHERE rewrite_id = ?
+            """,
+            (
+                json.dumps(snapshot),
+                row[0],
+            ),
         )
 
     restarted = _services(

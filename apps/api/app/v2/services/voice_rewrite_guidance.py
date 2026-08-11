@@ -229,10 +229,12 @@ class VoiceRewriteGuidanceService:
             analysis_state=profile.analysis_state.value,
             analyzer_version=provenance.analyzer_version,
             analyzed_at=provenance.analyzed_at,
+            source_sample_ids=provenance.source_sample_ids,
             source_fingerprint=provenance.source_fingerprint,
             sample_count=provenance.sample_count,
             sufficiency=provenance.sufficiency.value,
             consistency=provenance.consistency.value,
+            style_attributes=profile.style_attributes,
         )
 
         return self._translator.translate(
