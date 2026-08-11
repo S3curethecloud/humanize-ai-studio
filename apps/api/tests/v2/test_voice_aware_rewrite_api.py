@@ -898,3 +898,112 @@ def test_voice_rewrite_supports_claim_lock_controls() -> None:
     assert body["claim_lock"]["preparation"]["claim_lock"]["enforcement_mode"] == "audit_only"
 
     assert body["history"]["claim_lock_enforcement_mode"] == "audit_only"
+
+
+def test_strict_claim_lock_violation_returns_409() -> None:
+    provider = RecordingProvider(
+        rewritten_text=("revenue was 42 million in 2025. The team completed the review."),
+    )
+    _configure(provider)
+
+    user_id = _create_user(
+        email="strict-claim-lock@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    payload = _rewrite_payload(
+        user_id=user_id,
+    )
+    payload["protected_terms"] = [
+        {
+            "text": "Revenue",
+            "case_sensitive": True,
+        }
+    ]
+    payload["claim_lock_enforcement_mode"] = "strict"
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=payload,
+    )
+
+    assert response.status_code == 409
+    assert "claim lock strict enforcement failed" in response.json()["detail"]
+
+
+def test_audit_only_claim_lock_violation_returns_evidence() -> None:
+    provider = RecordingProvider(
+        rewritten_text=("revenue was 42 million in 2025. The team completed the review."),
+    )
+    _configure(provider)
+
+    user_id = _create_user(
+        email="audit-claim-lock@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    payload = _rewrite_payload(
+        user_id=user_id,
+    )
+    payload["protected_terms"] = [
+        {
+            "text": "Revenue",
+            "case_sensitive": True,
+        }
+    ]
+    payload["claim_lock_enforcement_mode"] = "audit_only"
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["claim_lock"]["validation"]["decision"] == "violation"
+    assert body["history"]["claim_lock_enforcement_mode"] == "audit_only"
+    assert body["history"]["claim_lock_validation"]["decision"] == "violation"
+
+
+def test_voice_rewrite_strict_claim_lock_violation_returns_409() -> None:
+    provider = RecordingProvider(
+        rewritten_text=("revenue was 42 million in 2025. The team completed the review."),
+    )
+    _configure(provider)
+
+    user_id = _create_user(
+        email="voice-strict-claim-lock@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile_id = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    payload = _rewrite_payload(
+        user_id=user_id,
+        voice_profile_id=profile_id,
+    )
+    payload["protected_terms"] = [
+        {
+            "text": "Revenue",
+            "case_sensitive": True,
+        }
+    ]
+    payload["claim_lock_enforcement_mode"] = "strict"
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=payload,
+    )
+
+    assert response.status_code == 409
+    assert "claim lock strict enforcement failed" in response.json()["detail"]
