@@ -8,6 +8,9 @@ from app.v2.config.persistence import (
     PersistenceBackend,
     V2PersistenceSettings,
 )
+from app.v2.config.voice_audit_auth import (
+    VoiceAuditAuthenticitySettings,
+)
 from app.v2.repositories.factory import (
     build_repository_bundle,
     build_unit_of_work,
@@ -45,8 +48,13 @@ class V2Services:
         workflow: RewriteWorkflow | None = None,
         voice_aware_provider: (VoiceAwareRewriteProvider | None) = None,
         persistence_settings: (V2PersistenceSettings | None) = None,
+        voice_audit_auth_settings: (VoiceAuditAuthenticitySettings | None) = None,
     ) -> None:
         resolved_persistence = persistence_settings or V2PersistenceSettings.from_environment()
+        resolved_voice_audit_auth = (
+            voice_audit_auth_settings or VoiceAuditAuthenticitySettings.from_environment()
+        )
+        voice_audit_authenticator = resolved_voice_audit_auth.build_authenticator()
 
         repositories = build_repository_bundle(resolved_persistence)
 
@@ -65,6 +73,7 @@ class V2Services:
         self.history = RewriteHistoryService(
             workspace_service=self.workspace,
             history=repositories.history,
+            voice_audit_authenticator=(voice_audit_authenticator),
         )
 
         self.voice_profiles = VoiceProfileService(

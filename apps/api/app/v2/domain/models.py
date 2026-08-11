@@ -107,17 +107,38 @@ class VoiceRewriteAnalysisSnapshot(BaseModel):
 
         return self
 
-    def canonical_digest(
+    def canonical_bytes(
         self,
-    ) -> str:
-        canonical_payload = json.dumps(
+    ) -> bytes:
+        return json.dumps(
             self.model_dump(mode="json"),
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
 
-        return hashlib.sha256(canonical_payload).hexdigest()
+    def canonical_digest(
+        self,
+    ) -> str:
+        return hashlib.sha256(self.canonical_bytes()).hexdigest()
+
+
+class VoiceRewriteAnalysisAuthenticity(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    algorithm: Literal["hmac-sha256"] = "hmac-sha256"
+    authentication_version: Literal["voice-snapshot-authenticity-v1"] = (
+        "voice-snapshot-authenticity-v1"
+    )
+    key_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    mac: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
 
 
 class VoiceRewriteAnalysisBinding(BaseModel):
@@ -171,6 +192,7 @@ class RewriteHistoryRecord(BaseModel):
     voice_guidance_version: str | None = None
     voice_analysis_snapshot: VoiceRewriteAnalysisSnapshot | None = None
     voice_analysis_binding: VoiceRewriteAnalysisBinding | None = None
+    voice_analysis_authenticity: VoiceRewriteAnalysisAuthenticity | None = None
 
     fallback_used: bool
     verification_decision: str

@@ -20,6 +20,7 @@ from app.v2.domain.models import (
     VoiceFormality,
     VoiceProfileRecord,
     VoiceProfileStatus,
+    VoiceRewriteAnalysisAuthenticity,
     VoiceRewriteAnalysisBinding,
     VoiceRewriteAnalysisSnapshot,
     VoiceSentenceLength,
@@ -103,6 +104,7 @@ def initialize_database(
                 voice_guidance_version TEXT,
                 voice_analysis_snapshot TEXT,
                 voice_analysis_binding TEXT,
+                voice_analysis_authenticity TEXT,
                 fallback_used INTEGER NOT NULL,
                 verification_decision TEXT NOT NULL,
                 editorial_quality_decision TEXT NOT NULL,
@@ -208,6 +210,11 @@ def initialize_database(
 
         if "voice_analysis_binding" not in rewrite_history_columns:
             connection.execute("ALTER TABLE rewrite_history ADD COLUMN voice_analysis_binding TEXT")
+
+        if "voice_analysis_authenticity" not in rewrite_history_columns:
+            connection.execute(
+                "ALTER TABLE rewrite_history ADD COLUMN voice_analysis_authenticity TEXT"
+            )
 
         voice_profile_columns = {
             row["name"]
@@ -524,6 +531,7 @@ class SQLiteRewriteHistoryRepository:
                     voice_guidance_version,
                     voice_analysis_snapshot,
                     voice_analysis_binding,
+                    voice_analysis_authenticity,
                     fallback_used,
                     verification_decision,
                     editorial_quality_decision,
@@ -532,7 +540,7 @@ class SQLiteRewriteHistoryRepository:
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -565,6 +573,14 @@ class SQLiteRewriteHistoryRepository:
                             separators=(",", ":"),
                         )
                         if record.voice_analysis_binding is not None
+                        else None
+                    ),
+                    (
+                        json.dumps(
+                            record.voice_analysis_authenticity.model_dump(mode="json"),
+                            separators=(",", ":"),
+                        )
+                        if record.voice_analysis_authenticity is not None
                         else None
                     ),
                     int(record.fallback_used),
@@ -651,6 +667,13 @@ class SQLiteRewriteHistoryRepository:
                     json.loads(row["voice_analysis_binding"])
                 )
                 if row["voice_analysis_binding"] is not None
+                else None
+            ),
+            voice_analysis_authenticity=(
+                VoiceRewriteAnalysisAuthenticity.model_validate(
+                    json.loads(row["voice_analysis_authenticity"])
+                )
+                if row["voice_analysis_authenticity"] is not None
                 else None
             ),
             fallback_used=bool(row["fallback_used"]),
