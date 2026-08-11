@@ -17,7 +17,10 @@ from app.v2.config.persistence import (
     PersistenceBackend,
     V2PersistenceSettings,
 )
-from app.v2.domain.models import VoiceSourceSample
+from app.v2.domain.models import (
+    VoiceSourceSample,
+    VoiceWarmth,
+)
 from app.v2.repositories.sqlite import (
     initialize_database,
 )
@@ -151,6 +154,13 @@ def _create_voice_rewrite(
     assert result.history.voice_analysis_snapshot.consistency == provenance.consistency.value
     assert result.history.voice_analysis_snapshot.source_sample_ids == provenance.source_sample_ids
     assert result.history.voice_analysis_snapshot.style_attributes == profile.style_attributes
+    assert result.history.voice_analysis_binding is not None
+    assert result.history.voice_analysis_binding.algorithm == "sha256"
+    assert (
+        result.history.voice_analysis_binding.canonicalization_version
+        == "voice-snapshot-canonical-v1"
+    )
+    assert result.history.voice_analysis_binding.matches(result.history.voice_analysis_snapshot)
 
     return (
         user.user_id,
@@ -180,6 +190,8 @@ def test_voice_evidence_is_persisted_in_memory_history() -> None:
     assert records[0].voice_analysis_snapshot.source_fingerprint
     assert records[0].voice_analysis_snapshot.source_sample_ids == ("history_sample_1",)
     assert records[0].voice_analysis_snapshot.style_attributes
+    assert records[0].voice_analysis_binding is not None
+    assert records[0].voice_analysis_binding.matches(records[0].voice_analysis_snapshot)
 
 
 def test_voice_evidence_survives_sqlite_service_restart(
@@ -213,6 +225,8 @@ def test_voice_evidence_survives_sqlite_service_restart(
     assert records[0].voice_analysis_snapshot.source_fingerprint
     assert records[0].voice_analysis_snapshot.source_sample_ids == ("history_sample_1",)
     assert records[0].voice_analysis_snapshot.style_attributes
+    assert records[0].voice_analysis_binding is not None
+    assert records[0].voice_analysis_binding.matches(records[0].voice_analysis_snapshot)
 
 
 def test_initialize_database_migrates_legacy_history_table(
@@ -256,6 +270,7 @@ def test_initialize_database_migrates_legacy_history_table(
     assert "voice_profile_id" in columns
     assert "voice_guidance_version" in columns
     assert "voice_analysis_snapshot" in columns
+    assert "voice_analysis_binding" in columns
 
 
 def test_rewrite_snapshot_survives_profile_reanalysis() -> None:
@@ -273,8 +288,11 @@ def test_rewrite_snapshot_survives_profile_reanalysis() -> None:
     assert len(before_records) == 1
 
     original_snapshot = before_records[0].voice_analysis_snapshot
+    original_binding = before_records[0].voice_analysis_binding
 
     assert original_snapshot is not None
+    assert original_binding is not None
+    assert original_binding.matches(original_snapshot)
     assert original_snapshot.source_sample_ids == ("history_sample_1",)
 
     original_style_attributes = original_snapshot.style_attributes
@@ -323,6 +341,8 @@ def test_rewrite_snapshot_survives_profile_reanalysis() -> None:
 
     assert len(after_records) == 1
     assert after_records[0].voice_analysis_snapshot == original_snapshot
+    assert after_records[0].voice_analysis_binding == original_binding
+    assert after_records[0].voice_analysis_binding.matches(after_records[0].voice_analysis_snapshot)
     assert after_records[0].voice_analysis_snapshot.style_attributes == original_style_attributes
     assert after_records[0].voice_analysis_snapshot.source_sample_ids == ("history_sample_1",)
 
@@ -733,6 +753,290 @@ def test_sqlite_history_rejects_incomplete_source_provenance(
     with pytest.raises(
         ValidationError,
         match=expected_fragment,
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+def test_voice_snapshot_binding_is_deterministic() -> None:
+    services = _services(
+        backend=PersistenceBackend.MEMORY,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    records = services.history.list_workspace_history(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    assert len(records) == 1
+
+    snapshot = records[0].voice_analysis_snapshot
+
+    assert snapshot is not None
+
+    first = snapshot.canonical_digest()
+    second = snapshot.canonical_digest()
+
+    assert first == second
+    assert len(first) == 64
+
+
+def test_voice_snapshot_binding_changes_when_provenance_changes() -> None:
+    services = _services(
+        backend=PersistenceBackend.MEMORY,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    records = services.history.list_workspace_history(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    assert len(records) == 1
+
+    snapshot = records[0].voice_analysis_snapshot
+
+    assert snapshot is not None
+
+    changed = snapshot.model_copy(
+        update={
+            "source_fingerprint": "b" * 64,
+        }
+    )
+
+    assert snapshot.canonical_digest() != changed.canonical_digest()
+
+
+def test_voice_snapshot_binding_changes_when_style_changes() -> None:
+    services = _services(
+        backend=PersistenceBackend.MEMORY,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    records = services.history.list_workspace_history(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    assert len(records) == 1
+
+    snapshot = records[0].voice_analysis_snapshot
+
+    assert snapshot is not None
+
+    changed_style = snapshot.style_attributes.model_copy(
+        update={
+            "warmth": VoiceWarmth.WARM,
+        }
+    )
+
+    changed = snapshot.model_copy(
+        update={
+            "style_attributes": changed_style,
+        }
+    )
+
+    assert snapshot.canonical_digest() != changed.canonical_digest()
+
+
+def test_voice_snapshot_binding_matches_binding_model() -> None:
+    services = _services(
+        backend=PersistenceBackend.MEMORY,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    records = services.history.list_workspace_history(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    assert len(records) == 1
+
+    snapshot = records[0].voice_analysis_snapshot
+
+    assert snapshot is not None
+
+    from app.v2.domain.models import (
+        VoiceRewriteAnalysisBinding,
+    )
+
+    binding = VoiceRewriteAnalysisBinding.from_snapshot(snapshot)
+
+    assert binding.algorithm == "sha256"
+    assert binding.canonicalization_version == "voice-snapshot-canonical-v1"
+    assert binding.matches(snapshot)
+    assert binding.digest == snapshot.canonical_digest()
+
+
+def test_sqlite_history_rejects_snapshot_tampering_against_binding(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "tampered-snapshot-binding.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                rewrite_id,
+                voice_analysis_snapshot,
+                voice_analysis_binding
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+        assert row[1] is not None
+        assert row[2] is not None
+
+        snapshot = json.loads(row[1])
+
+        original_fingerprint = snapshot["source_fingerprint"]
+
+        replacement_fingerprint = "b" * 64 if original_fingerprint != "b" * 64 else "c" * 64
+
+        snapshot["source_fingerprint"] = replacement_fingerprint
+
+        connection.execute(
+            """
+            UPDATE rewrite_history
+            SET voice_analysis_snapshot = ?
+            WHERE rewrite_id = ?
+            """,
+            (
+                json.dumps(
+                    snapshot,
+                    separators=(",", ":"),
+                ),
+                row[0],
+            ),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="voice analysis binding does not match snapshot",
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+def test_sqlite_history_rejects_binding_digest_tampering(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "tampered-binding-digest.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                rewrite_id,
+                voice_analysis_binding
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+        assert row[1] is not None
+
+        binding = json.loads(row[1])
+
+        original_digest = binding["digest"]
+
+        replacement_digest = "b" * 64 if original_digest != "b" * 64 else "c" * 64
+
+        binding["digest"] = replacement_digest
+
+        connection.execute(
+            """
+            UPDATE rewrite_history
+            SET voice_analysis_binding = ?
+            WHERE rewrite_id = ?
+            """,
+            (
+                json.dumps(
+                    binding,
+                    separators=(",", ":"),
+                ),
+                row[0],
+            ),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="voice analysis binding does not match snapshot",
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+def test_sqlite_history_rejects_missing_voice_binding(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "missing-voice-binding.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            UPDATE rewrite_history
+            SET voice_analysis_binding = NULL
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="voice audit fields must be all present or all absent",
     ):
         restarted.history.list_workspace_history(
             workspace_id=workspace_id,

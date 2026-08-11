@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Literal
@@ -105,6 +107,45 @@ class VoiceRewriteAnalysisSnapshot(BaseModel):
 
         return self
 
+    def canonical_digest(
+        self,
+    ) -> str:
+        canonical_payload = json.dumps(
+            self.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+
+        return hashlib.sha256(canonical_payload).hexdigest()
+
+
+class VoiceRewriteAnalysisBinding(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    algorithm: Literal["sha256"] = "sha256"
+    canonicalization_version: Literal["voice-snapshot-canonical-v1"] = "voice-snapshot-canonical-v1"
+    digest: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        snapshot: VoiceRewriteAnalysisSnapshot,
+    ) -> VoiceRewriteAnalysisBinding:
+        return cls(
+            digest=snapshot.canonical_digest(),
+        )
+
+    def matches(
+        self,
+        snapshot: VoiceRewriteAnalysisSnapshot,
+    ) -> bool:
+        return self.digest == snapshot.canonical_digest()
+
 
 class RewriteHistoryRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -129,6 +170,7 @@ class RewriteHistoryRecord(BaseModel):
     voice_profile_id: str | None = None
     voice_guidance_version: str | None = None
     voice_analysis_snapshot: VoiceRewriteAnalysisSnapshot | None = None
+    voice_analysis_binding: VoiceRewriteAnalysisBinding | None = None
 
     fallback_used: bool
     verification_decision: str
@@ -146,6 +188,7 @@ class RewriteHistoryRecord(BaseModel):
             self.voice_profile_id,
             self.voice_guidance_version,
             self.voice_analysis_snapshot,
+            self.voice_analysis_binding,
         )
 
         present = tuple(value is not None for value in voice_audit_fields)
@@ -158,6 +201,13 @@ class RewriteHistoryRecord(BaseModel):
 
         if self.voice_guidance_version is not None and not self.voice_guidance_version.strip():
             raise ValueError("voice_guidance_version must be non-empty")
+
+        if (
+            self.voice_analysis_snapshot is not None
+            and self.voice_analysis_binding is not None
+            and not self.voice_analysis_binding.matches(self.voice_analysis_snapshot)
+        ):
+            raise ValueError("voice analysis binding does not match snapshot")
 
         return self
 

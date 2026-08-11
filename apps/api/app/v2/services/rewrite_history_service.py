@@ -8,6 +8,7 @@ from app.domain.models import (
 )
 from app.v2.domain.models import (
     RewriteHistoryRecord,
+    VoiceRewriteAnalysisBinding,
     VoiceRewriteAnalysisSnapshot,
 )
 from app.v2.repositories.interfaces import (
@@ -44,6 +45,12 @@ class RewriteHistoryService:
             user_id=user_id,
         )
 
+        voice_analysis_binding = (
+            VoiceRewriteAnalysisBinding.from_snapshot(voice_analysis_snapshot)
+            if voice_analysis_snapshot is not None
+            else None
+        )
+
         record = RewriteHistoryRecord(
             rewrite_id=(f"history_{uuid4().hex}"),
             workspace_id=workspace_id,
@@ -61,6 +68,7 @@ class RewriteHistoryService:
             voice_profile_id=voice_profile_id,
             voice_guidance_version=voice_guidance_version,
             voice_analysis_snapshot=voice_analysis_snapshot,
+            voice_analysis_binding=voice_analysis_binding,
             fallback_used=(response.provider_execution.fallback_used),
             verification_decision=(response.verification.decision.value),
             editorial_quality_decision=(response.editorial_quality.decision.value),

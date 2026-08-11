@@ -20,6 +20,7 @@ from app.v2.domain.models import (
     VoiceFormality,
     VoiceProfileRecord,
     VoiceProfileStatus,
+    VoiceRewriteAnalysisBinding,
     VoiceRewriteAnalysisSnapshot,
     VoiceSentenceLength,
     VoiceSourceSample,
@@ -101,6 +102,7 @@ def initialize_database(
                 voice_profile_id TEXT,
                 voice_guidance_version TEXT,
                 voice_analysis_snapshot TEXT,
+                voice_analysis_binding TEXT,
                 fallback_used INTEGER NOT NULL,
                 verification_decision TEXT NOT NULL,
                 editorial_quality_decision TEXT NOT NULL,
@@ -203,6 +205,9 @@ def initialize_database(
             connection.execute(
                 "ALTER TABLE rewrite_history ADD COLUMN voice_analysis_snapshot TEXT"
             )
+
+        if "voice_analysis_binding" not in rewrite_history_columns:
+            connection.execute("ALTER TABLE rewrite_history ADD COLUMN voice_analysis_binding TEXT")
 
         voice_profile_columns = {
             row["name"]
@@ -518,6 +523,7 @@ class SQLiteRewriteHistoryRepository:
                     voice_profile_id,
                     voice_guidance_version,
                     voice_analysis_snapshot,
+                    voice_analysis_binding,
                     fallback_used,
                     verification_decision,
                     editorial_quality_decision,
@@ -526,7 +532,7 @@ class SQLiteRewriteHistoryRepository:
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -551,6 +557,14 @@ class SQLiteRewriteHistoryRepository:
                             separators=(",", ":"),
                         )
                         if record.voice_analysis_snapshot is not None
+                        else None
+                    ),
+                    (
+                        json.dumps(
+                            record.voice_analysis_binding.model_dump(mode="json"),
+                            separators=(",", ":"),
+                        )
+                        if record.voice_analysis_binding is not None
                         else None
                     ),
                     int(record.fallback_used),
@@ -630,6 +644,13 @@ class SQLiteRewriteHistoryRepository:
                     json.loads(row["voice_analysis_snapshot"])
                 )
                 if row["voice_analysis_snapshot"] is not None
+                else None
+            ),
+            voice_analysis_binding=(
+                VoiceRewriteAnalysisBinding.model_validate(
+                    json.loads(row["voice_analysis_binding"])
+                )
+                if row["voice_analysis_binding"] is not None
                 else None
             ),
             fallback_used=bool(row["fallback_used"]),
