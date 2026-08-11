@@ -55,7 +55,7 @@ def _analysis_snapshot() -> VoiceRewriteAnalysisSnapshot:
             0,
             tzinfo=UTC,
         ),
-        source_fingerprint="snapshot-fingerprint",
+        source_fingerprint="a" * 64,
         sample_count=1,
         sufficiency="limited",
         consistency="not_applicable",

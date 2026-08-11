@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class WorkspaceRole(StrEnum):
@@ -47,13 +54,42 @@ class WorkspaceMembership(BaseModel):
 class VoiceRewriteAnalysisSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    analysis_state: str
-    analyzer_version: str
+    analysis_state: Literal["current"]
+    analyzer_version: str = Field(
+        min_length=1,
+        max_length=200,
+    )
     analyzed_at: datetime
-    source_fingerprint: str
-    sample_count: int
-    sufficiency: str
-    consistency: str
+    source_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    sample_count: int = Field(
+        ge=1,
+    )
+    sufficiency: Literal[
+        "insufficient",
+        "limited",
+        "strong",
+    ]
+    consistency: Literal[
+        "not_applicable",
+        "coherent",
+        "mixed",
+        "divergent",
+    ]
+
+    @field_validator("analyzed_at")
+    @classmethod
+    def require_timezone_aware_analysis_timestamp(
+        cls,
+        value: datetime,
+    ) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("analyzed_at must be timezone-aware")
+
+        return value
 
 
 class RewriteHistoryRecord(BaseModel):
@@ -87,6 +123,29 @@ class RewriteHistoryRecord(BaseModel):
     status: RewriteRecordStatus = RewriteRecordStatus.COMPLETED
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def require_coherent_voice_audit_tuple(
+        self,
+    ) -> RewriteHistoryRecord:
+        voice_audit_fields = (
+            self.voice_profile_id,
+            self.voice_guidance_version,
+            self.voice_analysis_snapshot,
+        )
+
+        present = tuple(value is not None for value in voice_audit_fields)
+
+        if any(present) and not all(present):
+            raise ValueError("voice audit fields must be all present or all absent")
+
+        if self.voice_profile_id is not None and not self.voice_profile_id.strip():
+            raise ValueError("voice_profile_id must be non-empty")
+
+        if self.voice_guidance_version is not None and not self.voice_guidance_version.strip():
+            raise ValueError("voice_guidance_version must be non-empty")
+
+        return self
 
 
 class VoiceProfileStatus(StrEnum):

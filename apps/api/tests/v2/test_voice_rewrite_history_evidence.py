@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
 
 from app.domain.models import RewriteRequest
 from app.providers.base import (
@@ -310,3 +314,328 @@ def test_rewrite_snapshot_survives_profile_reanalysis() -> None:
 
     assert len(after_records) == 1
     assert after_records[0].voice_analysis_snapshot == original_snapshot
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_fragment"),
+    (
+        (
+            {
+                "analysis_state": "stale",
+            },
+            "analysis_state",
+        ),
+        (
+            {
+                "source_fingerprint": "not-a-sha256",
+            },
+            "source_fingerprint",
+        ),
+        (
+            {
+                "sample_count": 0,
+            },
+            "sample_count",
+        ),
+        (
+            {
+                "sufficiency": "unknown",
+            },
+            "sufficiency",
+        ),
+        (
+            {
+                "consistency": "unknown",
+            },
+            "consistency",
+        ),
+    ),
+)
+def test_sqlite_history_rejects_corrupted_voice_snapshot(
+    tmp_path: Path,
+    mutation: dict[str, object],
+    expected_fragment: str,
+) -> None:
+    database_path = tmp_path / "corrupted-history.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                rewrite_id,
+                voice_analysis_snapshot
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+        assert row[1] is not None
+
+        snapshot = json.loads(row[1])
+        snapshot.update(mutation)
+
+        connection.execute(
+            """
+            UPDATE rewrite_history
+            SET voice_analysis_snapshot = ?
+            WHERE rewrite_id = ?
+            """,
+            (
+                json.dumps(snapshot),
+                row[0],
+            ),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match=expected_fragment,
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+def test_sqlite_history_rejects_partial_voice_snapshot(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "partial-history.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT rewrite_id
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+
+        connection.execute(
+            """
+            UPDATE rewrite_history
+            SET voice_analysis_snapshot = ?
+            WHERE rewrite_id = ?
+            """,
+            (
+                json.dumps(
+                    {
+                        "analysis_state": "current",
+                        "analyzer_version": "voice-dna-v1",
+                    }
+                ),
+                row[0],
+            ),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(ValidationError):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+def test_sqlite_history_rejects_naive_analysis_timestamp(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "naive-timestamp-history.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                rewrite_id,
+                voice_analysis_snapshot
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+        assert row[1] is not None
+
+        snapshot = json.loads(row[1])
+        snapshot["analyzed_at"] = "2026-08-11T12:00:00"
+
+        connection.execute(
+            """
+            UPDATE rewrite_history
+            SET voice_analysis_snapshot = ?
+            WHERE rewrite_id = ?
+            """,
+            (
+                json.dumps(snapshot),
+                row[0],
+            ),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="timezone-aware",
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation_sql",
+    (
+        ("UPDATE rewrite_history SET voice_profile_id = NULL WHERE rewrite_id = ?"),
+        ("UPDATE rewrite_history SET voice_guidance_version = NULL WHERE rewrite_id = ?"),
+        ("UPDATE rewrite_history SET voice_analysis_snapshot = NULL WHERE rewrite_id = ?"),
+    ),
+)
+def test_sqlite_history_rejects_partial_voice_audit_tuple(
+    tmp_path: Path,
+    mutation_sql: str,
+) -> None:
+    database_path = tmp_path / "partial-voice-audit.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT rewrite_id
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+
+        connection.execute(
+            mutation_sql,
+            (row[0],),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="voice audit fields must be all present or all absent",
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+
+
+@pytest.mark.parametrize(
+    ("column_name", "expected_fragment"),
+    (
+        (
+            "voice_profile_id",
+            "voice_profile_id must be non-empty",
+        ),
+        (
+            "voice_guidance_version",
+            "voice_guidance_version must be non-empty",
+        ),
+    ),
+)
+def test_sqlite_history_rejects_blank_voice_audit_identifiers(
+    tmp_path: Path,
+    column_name: str,
+    expected_fragment: str,
+) -> None:
+    database_path = tmp_path / "blank-voice-audit.db"
+
+    services = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    user_id, workspace_id, _ = _create_voice_rewrite(services)
+
+    statements = {
+        "voice_profile_id": (
+            "UPDATE rewrite_history SET voice_profile_id = '' WHERE rewrite_id = ?"
+        ),
+        "voice_guidance_version": (
+            "UPDATE rewrite_history SET voice_guidance_version = '' WHERE rewrite_id = ?"
+        ),
+    }
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT rewrite_id
+            FROM rewrite_history
+            WHERE workspace_id = ?
+            """,
+            (workspace_id,),
+        ).fetchone()
+
+        assert row is not None
+
+        connection.execute(
+            statements[column_name],
+            (row[0],),
+        )
+
+    restarted = _services(
+        backend=PersistenceBackend.SQLITE,
+        sqlite_path=database_path,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match=expected_fragment,
+    ):
+        restarted.history.list_workspace_history(
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
