@@ -15,14 +15,40 @@ from app.v2.repositories.factory import (
     build_repository_bundle,
     build_unit_of_work,
 )
+from app.v2.repositories.long_document_audit import (
+    InMemoryLongDocumentAuditRepository,
+    LongDocumentAuditRepository,
+    SQLiteLongDocumentAuditRepository,
+)
 from app.v2.services.claim_lock_preparation import (
     ClaimLockPreparationService,
+)
+from app.v2.services.document_reconstructor import (
+    DocumentReconstructor,
+)
+from app.v2.services.document_structure_detector import (
+    DocumentStructureDetector,
+)
+from app.v2.services.long_document_audit_service import (
+    LongDocumentAuditService,
+)
+from app.v2.services.long_document_control_evaluator import (
+    LongDocumentControlEvaluator,
+)
+from app.v2.services.long_document_rewrite_service import (
+    LongDocumentWorkspaceRewriteService,
 )
 from app.v2.services.multi_candidate_rewrite_service import (
     MultiCandidateWorkspaceRewriteService,
 )
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
+)
+from app.v2.services.section_rewrite_orchestrator import (
+    SectionRewriteOrchestrator,
+)
+from app.v2.services.section_rewrite_planner import (
+    SectionRewritePlanner,
 )
 from app.v2.services.voice_aware_provider import (
     VoiceAwareRewriteProvider,
@@ -107,6 +133,40 @@ class V2Services:
             )
 
         self.claim_lock_preparation = ClaimLockPreparationService()
+
+        if resolved_persistence.backend is PersistenceBackend.MEMORY:
+            long_document_audit_repository: LongDocumentAuditRepository = (
+                InMemoryLongDocumentAuditRepository()
+            )
+        elif resolved_persistence.backend is PersistenceBackend.SQLITE:
+            if resolved_persistence.sqlite_path is None:
+                raise ValueError("SQLite persistence requires a database path.")
+
+            long_document_audit_repository = SQLiteLongDocumentAuditRepository(
+                database_path=(resolved_persistence.sqlite_path),
+            )
+        else:
+            raise RuntimeError("Unsupported long-document persistence backend.")
+
+        self.long_document_audit = LongDocumentAuditService(
+            workspace_service=self.workspace,
+            repository=(long_document_audit_repository),
+        )
+
+        self.long_document = LongDocumentWorkspaceRewriteService(
+            workspace_service=self.workspace,
+            claim_lock_preparation_service=(self.claim_lock_preparation),
+            structure_detector=(DocumentStructureDetector()),
+            planner=SectionRewritePlanner(),
+            orchestrator=(
+                SectionRewriteOrchestrator(
+                    workflow=resolved_workflow,
+                )
+            ),
+            control_evaluator=(LongDocumentControlEvaluator()),
+            reconstructor=DocumentReconstructor(),
+            audit_service=(self.long_document_audit),
+        )
 
         self.rewrite = WorkspaceRewriteService(
             workspace_service=self.workspace,

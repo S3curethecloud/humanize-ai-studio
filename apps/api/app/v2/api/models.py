@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 
 from app.domain.models import (
     ReleaseDecision,
@@ -15,6 +20,13 @@ from app.v2.domain.candidate_ranking import (
 )
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
+)
+from app.v2.domain.long_document_audit import (
+    LongDocumentAuditRecord,
+)
+from app.v2.domain.long_documents import (
+    MAX_LONG_DOCUMENT_CHARS,
+    DocumentReconstruction,
 )
 from app.v2.domain.models import (
     RewriteHistoryRecord,
@@ -239,3 +251,41 @@ class AnalyzeVoiceProfileRequest(BaseModel):
 class VoiceProfileAnalysisResponse(BaseModel):
     profile: VoiceProfileRecord
     evidence: VoiceAnalysisEvidence
+
+
+class LongDocumentRewritePayload(RewriteRequest):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(
+        min_length=1,
+        max_length=MAX_LONG_DOCUMENT_CHARS,
+    )
+
+
+class WorkspaceLongDocumentRewriteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    rewrite: LongDocumentRewritePayload
+    protected_terms: tuple[
+        ExplicitProtectedTerm,
+        ...,
+    ] = ()
+    claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None
+
+    @property
+    def claim_lock_requested(
+        self,
+    ) -> bool:
+        return bool(self.protected_terms) or (
+            "claim_lock_enforcement_mode" in self.model_fields_set
+        )
+
+
+class WorkspaceLongDocumentRewriteResponse(BaseModel):
+    reconstruction: DocumentReconstruction
+    audit: LongDocumentAuditRecord
+    claim_lock: ClaimLockRewriteEvidence | None = None

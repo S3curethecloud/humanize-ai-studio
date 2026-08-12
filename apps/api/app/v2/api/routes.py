@@ -21,9 +21,22 @@ from app.v2.services.candidate_rewrite_orchestrator import (
 from app.v2.services.claim_lock_validator import (
     ClaimLockViolationError,
 )
+from app.v2.services.document_reconstructor import (
+    DocumentReconstructionIntegrityError,
+)
+from app.v2.services.long_document_audit_service import (
+    LongDocumentAuditIntegrityError,
+)
+from app.v2.services.long_document_control_evaluator import (
+    CrossSectionConsistencyViolationError,
+    LongDocumentControlEvaluationError,
+)
 from app.v2.services.multi_candidate_rewrite_service import (
     MultiCandidateVoiceUnavailableError,
     NoEligibleCandidateError,
+)
+from app.v2.services.section_rewrite_orchestrator import (
+    SectionRewriteExecutionError,
 )
 from app.v2.services.voice_profile_service import (
     VoiceProfileLifecycleError,
@@ -56,6 +69,8 @@ from app.v2.api.models import (
     VoiceProfileResponse,
     VoiceRewriteEvidence,
     WorkspaceHistoryResponse,
+    WorkspaceLongDocumentRewriteRequest,
+    WorkspaceLongDocumentRewriteResponse,
     WorkspaceRewriteRequest,
     WorkspaceRewriteResponse,
 )
@@ -300,6 +315,60 @@ def create_workspace_rewrite(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/workspaces/{workspace_id}/long-document-rewrites",
+    response_model=WorkspaceLongDocumentRewriteResponse,
+    response_model_exclude_none=True,
+)
+def create_workspace_long_document_rewrite(
+    workspace_id: str,
+    request: WorkspaceLongDocumentRewriteRequest,
+) -> WorkspaceLongDocumentRewriteResponse:
+    try:
+        claim_lock_enforcement_mode = (
+            request.claim_lock_enforcement_mode or ClaimLockEnforcementMode.STRICT
+        )
+
+        result = services.long_document.execute(
+            workspace_id=workspace_id,
+            user_id=request.user_id,
+            request=request.rewrite,
+            explicit_protected_terms=(request.protected_terms),
+            claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+        )
+
+        return WorkspaceLongDocumentRewriteResponse(
+            reconstruction=result.reconstruction,
+            audit=result.audit,
+            claim_lock=(
+                ClaimLockRewriteEvidence(
+                    preparation=(result.claim_lock_preparation),
+                    validation=(result.evaluation.claim_lock_validation),
+                )
+                if request.claim_lock_requested
+                else None
+            ),
+        )
+
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except (
+        ClaimLockViolationError,
+        CrossSectionConsistencyViolationError,
+        DocumentReconstructionIntegrityError,
+        LongDocumentAuditIntegrityError,
+        LongDocumentControlEvaluationError,
+        SectionRewriteExecutionError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
