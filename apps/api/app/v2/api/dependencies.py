@@ -18,6 +18,9 @@ from app.v2.repositories.factory import (
 from app.v2.services.claim_lock_preparation import (
     ClaimLockPreparationService,
 )
+from app.v2.services.multi_candidate_rewrite_service import (
+    MultiCandidateWorkspaceRewriteService,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -109,6 +112,15 @@ class V2Services:
             workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
+            claim_lock_preparation_service=(self.claim_lock_preparation),
+        )
+
+        self.multi_candidate = MultiCandidateWorkspaceRewriteService(
+            workspace_service=self.workspace,
+            history_service=self.history,
+            workflow=resolved_workflow,
+            voice_guidance_service=self.voice_rewrite_guidance,
+            voice_provider=resolved_voice_provider,
             claim_lock_preparation_service=(self.claim_lock_preparation),
         )
 

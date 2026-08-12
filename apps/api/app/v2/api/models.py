@@ -3,8 +3,15 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, model_validator
 
 from app.domain.models import (
+    ReleaseDecision,
     RewriteRequest,
     RewriteResponse,
+)
+from app.v2.domain.candidate_audit import (
+    CandidateAuditSnapshot,
+)
+from app.v2.domain.candidate_ranking import (
+    CandidateSelectionEvidence,
 )
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
@@ -17,6 +24,10 @@ from app.v2.domain.models import (
     VoiceSourceSample,
     VoiceStyleAttributes,
     WorkspaceRecord,
+)
+from app.v2.domain.rewrite_candidates import (
+    RewriteCandidateDiffSet,
+    RewriteCandidateSet,
 )
 from app.v2.services.claim_lock_extractor import (
     ExplicitProtectedTerm,
@@ -83,6 +94,17 @@ class WorkspaceRewriteRequest(BaseModel):
         ...,
     ] = ()
     claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None
+    candidate_count: int | None = Field(
+        default=None,
+        ge=2,
+        le=5,
+    )
+
+    @property
+    def multi_candidate_requested(
+        self,
+    ) -> bool:
+        return self.candidate_count is not None
 
     @property
     def claim_lock_requested(
@@ -102,11 +124,30 @@ class ClaimLockRewriteEvidence(BaseModel):
     validation: ClaimLockValidationResult
 
 
+class CandidateControlRewriteEvidence(BaseModel):
+    candidate_id: str
+    ordinal: int
+    v1_release_decision: ReleaseDecision
+    claim_lock_validation: ClaimLockValidationResult
+
+
+class MultiCandidateRewriteEvidence(BaseModel):
+    candidate_set: RewriteCandidateSet
+    diffs: RewriteCandidateDiffSet
+    controls: tuple[
+        CandidateControlRewriteEvidence,
+        ...,
+    ]
+    selection: CandidateSelectionEvidence
+    audit: CandidateAuditSnapshot
+
+
 class WorkspaceRewriteResponse(BaseModel):
     rewrite: RewriteResponse
     history: RewriteHistoryRecord
     voice: VoiceRewriteEvidence | None = None
     claim_lock: ClaimLockRewriteEvidence | None = None
+    multi_candidate: MultiCandidateRewriteEvidence | None = None
 
 
 class CreateVoiceProfileRequest(BaseModel):

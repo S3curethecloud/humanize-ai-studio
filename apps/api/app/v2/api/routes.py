@@ -12,8 +12,15 @@ from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
 from app.v2.domain.models import VoiceProfileStatus
+from app.v2.services.candidate_control_enforcement import (
+    CandidateClaimLockViolationError,
+)
 from app.v2.services.claim_lock_validator import (
     ClaimLockViolationError,
+)
+from app.v2.services.multi_candidate_rewrite_service import (
+    MultiCandidateVoiceUnavailableError,
+    NoEligibleCandidateError,
 )
 from app.v2.services.voice_profile_service import (
     VoiceProfileLifecycleError,
@@ -32,12 +39,14 @@ __all__ = [
 from app.v2.api.models import (
     AnalyzeVoiceProfileRequest,
     ArchiveVoiceProfileRequest,
+    CandidateControlRewriteEvidence,
     ClaimLockRewriteEvidence,
     CreateUserRequest,
     CreateUserResponse,
     CreateVoiceProfileRequest,
     CreateWorkspaceRequest,
     CreateWorkspaceResponse,
+    MultiCandidateRewriteEvidence,
     UpdateVoiceProfileRequest,
     VoiceProfileAnalysisResponse,
     VoiceProfileListResponse,
@@ -145,6 +154,61 @@ def create_workspace_rewrite(
             request.claim_lock_enforcement_mode or ClaimLockEnforcementMode.STRICT
         )
 
+        if request.multi_candidate_requested:
+            candidate_count = request.candidate_count
+
+            if candidate_count is None:
+                raise RuntimeError("multi-candidate request is missing candidate_count")
+
+            multi_result = services.multi_candidate.execute(
+                workspace_id=workspace_id,
+                user_id=request.user_id,
+                request=request.rewrite,
+                candidate_count=candidate_count,
+                voice_profile_id=request.voice_profile_id,
+                explicit_protected_terms=(request.protected_terms),
+                claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+            )
+
+            return WorkspaceRewriteResponse(
+                rewrite=multi_result.selected_response,
+                history=multi_result.history,
+                voice=(
+                    VoiceRewriteEvidence(
+                        applied=True,
+                        profile_id=(multi_result.voice_guidance.profile_id),
+                        guidance_version=(multi_result.voice_guidance.guidance_version),
+                    )
+                    if multi_result.voice_guidance is not None
+                    else None
+                ),
+                claim_lock=(
+                    ClaimLockRewriteEvidence(
+                        preparation=(multi_result.claim_lock_preparation),
+                        validation=(multi_result.selected_claim_lock_validation),
+                    )
+                    if request.claim_lock_requested
+                    else None
+                ),
+                multi_candidate=(
+                    MultiCandidateRewriteEvidence(
+                        candidate_set=(multi_result.candidate_set),
+                        diffs=multi_result.diff_set,
+                        controls=tuple(
+                            CandidateControlRewriteEvidence(
+                                candidate_id=(control.candidate_id),
+                                ordinal=control.ordinal,
+                                v1_release_decision=(control.v1_release_decision),
+                                claim_lock_validation=(control.claim_lock_validation),
+                            )
+                            for control in multi_result.controls
+                        ),
+                        selection=(multi_result.selection),
+                        audit=(multi_result.audit_snapshot),
+                    )
+                ),
+            )
+
         if request.voice_profile_id is None:
             result = services.rewrite.execute(
                 workspace_id=workspace_id,
@@ -202,9 +266,18 @@ def create_workspace_rewrite(
             ),
         )
 
-    except ClaimLockViolationError as exc:
+    except (
+        CandidateClaimLockViolationError,
+        ClaimLockViolationError,
+        NoEligibleCandidateError,
+    ) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except MultiCandidateVoiceUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
     except (
