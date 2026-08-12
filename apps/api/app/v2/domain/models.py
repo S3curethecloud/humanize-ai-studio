@@ -14,6 +14,9 @@ from pydantic import (
     model_validator,
 )
 
+from app.v2.domain.candidate_audit import (
+    CandidateAuditSnapshot,
+)
 from app.v2.domain.claim_lock import (
     ClaimLock,
     ClaimLockEnforcementMode,
@@ -206,6 +209,16 @@ class RewriteHistoryRecord(BaseModel):
     claim_lock_validation: ClaimLockValidationAuditSnapshot | None = None
     claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None
 
+    candidate_set_id: str | None = Field(
+        default=None,
+        max_length=200,
+    )
+    candidate_audit_snapshot: CandidateAuditSnapshot | None = None
+    selected_candidate_id: str | None = Field(
+        default=None,
+        max_length=200,
+    )
+
     fallback_used: bool
     verification_decision: str
     editorial_quality_decision: str
@@ -267,6 +280,27 @@ class RewriteHistoryRecord(BaseModel):
 
             if self.claim_lock_validation.enforcement_mode is not self.claim_lock_enforcement_mode:
                 raise ValueError("claim lock validation enforcement mode mismatch")
+
+        return self
+
+    @model_validator(mode="after")
+    def require_coherent_candidate_audit_tuple(
+        self,
+    ) -> RewriteHistoryRecord:
+        if self.candidate_audit_snapshot is None:
+            if self.candidate_set_id is not None or self.selected_candidate_id is not None:
+                raise ValueError("candidate history linkage requires candidate audit snapshot")
+
+            return self
+
+        if self.candidate_set_id is None:
+            raise ValueError("candidate audit snapshot requires candidate_set_id")
+
+        if self.candidate_set_id != self.candidate_audit_snapshot.candidate_set_id:
+            raise ValueError("candidate history set ID must match candidate audit snapshot")
+
+        if self.selected_candidate_id != self.candidate_audit_snapshot.selected_candidate_id:
+            raise ValueError("selected candidate linkage must match candidate audit snapshot")
 
         return self
 

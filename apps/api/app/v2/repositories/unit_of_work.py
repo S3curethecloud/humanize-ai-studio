@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from types import TracebackType
@@ -140,6 +141,9 @@ class TransactionalRewriteHistoryRepository:
                 prompt_version,
                 voice_profile_id,
                 voice_guidance_version,
+                candidate_set_id,
+                candidate_audit_snapshot,
+                selected_candidate_id,
                 fallback_used,
                 verification_decision,
                 editorial_quality_decision,
@@ -148,7 +152,7 @@ class TransactionalRewriteHistoryRepository:
             )
             VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -167,6 +171,16 @@ class TransactionalRewriteHistoryRepository:
                 record.prompt_version,
                 record.voice_profile_id,
                 record.voice_guidance_version,
+                record.candidate_set_id,
+                (
+                    json.dumps(
+                        record.candidate_audit_snapshot.model_dump(mode="json"),
+                        separators=(",", ":"),
+                    )
+                    if record.candidate_audit_snapshot is not None
+                    else None
+                ),
+                record.selected_candidate_id,
                 int(record.fallback_used),
                 record.verification_decision,
                 record.editorial_quality_decision,

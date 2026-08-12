@@ -5,6 +5,9 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from app.v2.domain.candidate_audit import (
+    CandidateAuditSnapshot,
+)
 from app.v2.domain.claim_lock import (
     ClaimLock,
     ClaimLockEnforcementMode,
@@ -115,6 +118,9 @@ def initialize_database(
                 claim_lock_snapshot TEXT,
                 claim_lock_validation TEXT,
                 claim_lock_enforcement_mode TEXT,
+                candidate_set_id TEXT,
+                candidate_audit_snapshot TEXT,
+                selected_candidate_id TEXT,
                 fallback_used INTEGER NOT NULL,
                 verification_decision TEXT NOT NULL,
                 editorial_quality_decision TEXT NOT NULL,
@@ -236,6 +242,17 @@ def initialize_database(
             connection.execute(
                 "ALTER TABLE rewrite_history ADD COLUMN claim_lock_enforcement_mode TEXT"
             )
+
+        if "candidate_set_id" not in rewrite_history_columns:
+            connection.execute("ALTER TABLE rewrite_history ADD COLUMN candidate_set_id TEXT")
+
+        if "candidate_audit_snapshot" not in rewrite_history_columns:
+            connection.execute(
+                "ALTER TABLE rewrite_history ADD COLUMN candidate_audit_snapshot TEXT"
+            )
+
+        if "selected_candidate_id" not in rewrite_history_columns:
+            connection.execute("ALTER TABLE rewrite_history ADD COLUMN selected_candidate_id TEXT")
 
         voice_profile_columns = {
             row["name"]
@@ -556,6 +573,9 @@ class SQLiteRewriteHistoryRepository:
                     claim_lock_snapshot,
                     claim_lock_validation,
                     claim_lock_enforcement_mode,
+                    candidate_set_id,
+                    candidate_audit_snapshot,
+                    selected_candidate_id,
                     fallback_used,
                     verification_decision,
                     editorial_quality_decision,
@@ -565,7 +585,7 @@ class SQLiteRewriteHistoryRepository:
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?
+                    ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -629,6 +649,16 @@ class SQLiteRewriteHistoryRepository:
                         if record.claim_lock_enforcement_mode is not None
                         else None
                     ),
+                    record.candidate_set_id,
+                    (
+                        json.dumps(
+                            record.candidate_audit_snapshot.model_dump(mode="json"),
+                            separators=(",", ":"),
+                        )
+                        if record.candidate_audit_snapshot is not None
+                        else None
+                    ),
+                    record.selected_candidate_id,
                     int(record.fallback_used),
                     record.verification_decision,
                     (record.editorial_quality_decision),
@@ -739,6 +769,13 @@ class SQLiteRewriteHistoryRepository:
                 if row["claim_lock_enforcement_mode"] is not None
                 else None
             ),
+            candidate_set_id=row["candidate_set_id"],
+            candidate_audit_snapshot=(
+                CandidateAuditSnapshot.model_validate(json.loads(row["candidate_audit_snapshot"]))
+                if row["candidate_audit_snapshot"] is not None
+                else None
+            ),
+            selected_candidate_id=row["selected_candidate_id"],
             fallback_used=bool(row["fallback_used"]),
             verification_decision=(row["verification_decision"]),
             editorial_quality_decision=(row["editorial_quality_decision"]),

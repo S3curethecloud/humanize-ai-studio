@@ -6,6 +6,9 @@ from app.domain.models import (
     RewriteRequest,
     RewriteResponse,
 )
+from app.v2.domain.candidate_audit import (
+    CandidateAuditSnapshot,
+)
 from app.v2.domain.claim_lock import (
     ClaimLock,
     ClaimLockEnforcementMode,
@@ -54,6 +57,7 @@ class RewriteHistoryService:
         claim_lock_snapshot: ClaimLock | None = None,
         claim_lock_validation: ClaimLockValidationAuditSnapshot | None = None,
         claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None,
+        candidate_audit_snapshot: CandidateAuditSnapshot | None = None,
     ) -> RewriteHistoryRecord:
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
@@ -69,6 +73,18 @@ class RewriteHistoryService:
         voice_analysis_authenticity = (
             self._voice_audit_authenticator.sign(voice_analysis_snapshot)
             if (voice_analysis_snapshot is not None and self._voice_audit_authenticator is not None)
+            else None
+        )
+
+        candidate_set_id = (
+            candidate_audit_snapshot.candidate_set_id
+            if candidate_audit_snapshot is not None
+            else None
+        )
+
+        selected_candidate_id = (
+            candidate_audit_snapshot.selected_candidate_id
+            if candidate_audit_snapshot is not None
             else None
         )
 
@@ -94,6 +110,9 @@ class RewriteHistoryService:
             claim_lock_snapshot=claim_lock_snapshot,
             claim_lock_validation=claim_lock_validation,
             claim_lock_enforcement_mode=claim_lock_enforcement_mode,
+            candidate_set_id=candidate_set_id,
+            candidate_audit_snapshot=candidate_audit_snapshot,
+            selected_candidate_id=selected_candidate_id,
             fallback_used=(response.provider_execution.fallback_used),
             verification_decision=(response.verification.decision.value),
             editorial_quality_decision=(response.editorial_quality.decision.value),
