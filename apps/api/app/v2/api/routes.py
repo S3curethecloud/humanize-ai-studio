@@ -15,6 +15,9 @@ from app.v2.domain.models import VoiceProfileStatus
 from app.v2.services.candidate_control_enforcement import (
     CandidateClaimLockViolationError,
 )
+from app.v2.services.candidate_rewrite_orchestrator import (
+    CandidateGenerationError,
+)
 from app.v2.services.claim_lock_validator import (
     ClaimLockViolationError,
 )
@@ -268,6 +271,7 @@ def create_workspace_rewrite(
 
     except (
         CandidateClaimLockViolationError,
+        CandidateGenerationError,
         ClaimLockViolationError,
         NoEligibleCandidateError,
     ) as exc:
