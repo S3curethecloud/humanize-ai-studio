@@ -72,6 +72,17 @@ class EnterpriseMembershipRepository(Protocol):
         membership: EnterpriseWorkspaceMembership,
     ) -> EnterpriseWorkspaceMembership: ...
 
+    def update_many_atomic(
+        self,
+        memberships: tuple[
+            EnterpriseWorkspaceMembership,
+            ...,
+        ],
+    ) -> tuple[
+        EnterpriseWorkspaceMembership,
+        ...,
+    ]: ...
+
 
 class InMemoryEnterpriseOrganizationRepository:
     def __init__(self) -> None:
@@ -234,6 +245,38 @@ class InMemoryEnterpriseMembershipRepository:
         self._memberships[membership.membership_id] = membership
 
         return membership
+
+    def update_many_atomic(
+        self,
+        memberships: tuple[
+            EnterpriseWorkspaceMembership,
+            ...,
+        ],
+    ) -> tuple[
+        EnterpriseWorkspaceMembership,
+        ...,
+    ]:
+        _require_atomic_membership_updates(memberships)
+
+        for membership in memberships:
+            existing = self._memberships.get(membership.membership_id)
+
+            if existing is None:
+                raise ValueError(f"unknown enterprise membership: {membership.membership_id}")
+
+            _require_membership_update_integrity(
+                existing=existing,
+                updated=membership,
+            )
+
+        candidate = dict(self._memberships)
+
+        for membership in memberships:
+            candidate[membership.membership_id] = membership
+
+        self._memberships = candidate
+
+        return memberships
 
 
 class SQLiteEnterpriseOrganizationRepository:
@@ -586,6 +629,81 @@ class SQLiteEnterpriseMembershipRepository:
 
         return membership
 
+    def update_many_atomic(
+        self,
+        memberships: tuple[
+            EnterpriseWorkspaceMembership,
+            ...,
+        ],
+    ) -> tuple[
+        EnterpriseWorkspaceMembership,
+        ...,
+    ]:
+        _require_atomic_membership_updates(memberships)
+
+        connection = _connect(self._database_path)
+
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+
+            for membership in memberships:
+                row = connection.execute(
+                    """
+                    SELECT payload
+                    FROM enterprise_memberships
+                    WHERE membership_id = ?
+                    """,
+                    (membership.membership_id,),
+                ).fetchone()
+
+                if row is None:
+                    raise ValueError(f"unknown enterprise membership: {membership.membership_id}")
+
+                existing = EnterpriseWorkspaceMembership.model_validate_json(row["payload"])
+
+                _require_membership_update_integrity(
+                    existing=existing,
+                    updated=membership,
+                )
+
+            for membership in memberships:
+                cursor = connection.execute(
+                    """
+                    UPDATE enterprise_memberships
+                    SET
+                        organization_id = ?,
+                        workspace_id = ?,
+                        user_id = ?,
+                        status = ?,
+                        created_at = ?,
+                        updated_at = ?,
+                        payload = ?
+                    WHERE membership_id = ?
+                    """,
+                    (
+                        membership.organization_id,
+                        membership.workspace_id,
+                        membership.user_id,
+                        membership.status.value,
+                        membership.created_at.isoformat(),
+                        membership.updated_at.isoformat(),
+                        membership.model_dump_json(),
+                        membership.membership_id,
+                    ),
+                )
+
+                if cursor.rowcount != 1:
+                    raise RuntimeError("enterprise atomic membership update lost target record")
+
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+        return memberships
+
 
 def _connect(
     database_path: str | Path,
@@ -657,6 +775,21 @@ def _initialize_database(
             );
             """
         )
+
+
+def _require_atomic_membership_updates(
+    memberships: tuple[
+        EnterpriseWorkspaceMembership,
+        ...,
+    ],
+) -> None:
+    if not memberships:
+        raise ValueError("atomic enterprise membership update requires at least one record")
+
+    membership_ids = tuple(membership.membership_id for membership in memberships)
+
+    if len(set(membership_ids)) != len(membership_ids):
+        raise ValueError("atomic enterprise membership update requires unique membership ids")
 
 
 def _require_workspace_update_integrity(

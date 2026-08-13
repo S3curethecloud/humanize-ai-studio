@@ -724,7 +724,7 @@ def test_actor_and_target_are_separate_principals() -> None:
     assert actor_membership.role is EnterpriseWorkspaceRole.ADMIN
 
 
-def test_ownership_transfer_requires_transactional_boundary() -> None:
+def test_ownership_transfer_is_atomic_and_complete() -> None:
     service, memberships = _service()
 
     memberships.create(
@@ -735,17 +735,16 @@ def test_ownership_transfer_requires_transactional_boundary() -> None:
         )
     )
 
-    with pytest.raises(EnterpriseMembershipAdministrationError) as exc_info:
-        service.transfer_ownership(
-            actor_user_id="user_actor",
-            workspace_id="workspace_test",
-            target_user_id="user_target",
-        )
-
-    _assert_reason(
-        exc_info,
-        MembershipAdministrationFailureReason.TRANSACTION_REQUIRED,
+    previous_owner, new_owner = service.transfer_ownership(
+        actor_user_id="user_actor",
+        workspace_id="workspace_test",
+        target_user_id="user_target",
     )
+
+    assert previous_owner.role is EnterpriseWorkspaceRole.ADMIN
+    assert new_owner.role is EnterpriseWorkspaceRole.OWNER
+    assert previous_owner.updated_at == LATER
+    assert new_owner.updated_at == LATER
 
     actor_membership = memberships.get_current(
         workspace_id="workspace_test",
@@ -758,8 +757,8 @@ def test_ownership_transfer_requires_transactional_boundary() -> None:
 
     assert actor_membership is not None
     assert target_membership is not None
-    assert actor_membership.role is EnterpriseWorkspaceRole.OWNER
-    assert target_membership.role is EnterpriseWorkspaceRole.ADMIN
+    assert actor_membership.role is EnterpriseWorkspaceRole.ADMIN
+    assert target_membership.role is EnterpriseWorkspaceRole.OWNER
 
 
 def test_non_owner_cannot_reach_transfer_transaction_gate() -> None:
@@ -809,3 +808,46 @@ def test_suspended_transfer_target_is_rejected_before_transaction_gate() -> None
         exc_info,
         MembershipAdministrationFailureReason.MEMBERSHIP_NOT_ACTIVE,
     )
+
+
+def test_ownership_transfer_rejects_target_scope_mismatch() -> None:
+    service, memberships = _service()
+
+    memberships.create(
+        EnterpriseWorkspaceMembership(
+            membership_id="membership_target",
+            organization_id="org_other",
+            workspace_id="workspace_test",
+            user_id="user_target",
+            role=EnterpriseWorkspaceRole.ADMIN,
+            status=EnterpriseMembershipStatus.ACTIVE,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+
+    with pytest.raises(EnterpriseMembershipAdministrationError) as exc_info:
+        service.transfer_ownership(
+            actor_user_id="user_actor",
+            workspace_id="workspace_test",
+            target_user_id="user_target",
+        )
+
+    _assert_reason(
+        exc_info,
+        MembershipAdministrationFailureReason.TARGET_SCOPE_MISMATCH,
+    )
+
+    actor = memberships.get_current(
+        workspace_id="workspace_test",
+        user_id="user_actor",
+    )
+    target = memberships.get_current(
+        workspace_id="workspace_test",
+        user_id="user_target",
+    )
+
+    assert actor is not None
+    assert target is not None
+    assert actor.role is EnterpriseWorkspaceRole.OWNER
+    assert target.role is EnterpriseWorkspaceRole.ADMIN

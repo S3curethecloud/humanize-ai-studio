@@ -35,6 +35,7 @@ class MembershipAdministrationFailureReason(StrEnum):
     MEMBERSHIP_REMOVED = "membership_removed"
     MEMBERSHIP_NOT_ACTIVE = "membership_not_active"
     MEMBERSHIP_NOT_SUSPENDED = "membership_not_suspended"
+    TARGET_SCOPE_MISMATCH = "target_scope_mismatch"
     TRANSACTION_REQUIRED = "transaction_required"
 
 
@@ -310,7 +311,10 @@ class EnterpriseMembershipAdminService:
         actor_user_id: str,
         workspace_id: str,
         target_user_id: str,
-    ) -> None:
+    ) -> tuple[
+        EnterpriseWorkspaceMembership,
+        EnterpriseWorkspaceMembership,
+    ]:
         self._require_permission(
             actor_user_id=actor_user_id,
             workspace_id=workspace_id,
@@ -339,13 +343,48 @@ class EnterpriseMembershipAdminService:
                 MembershipAdministrationFailureReason.MEMBERSHIP_NOT_ACTIVE
             )
 
+        if (
+            actor.organization_id != target.organization_id
+            or actor.workspace_id != target.workspace_id
+            or actor.workspace_id != workspace_id
+        ):
+            raise EnterpriseMembershipAdministrationError(
+                MembershipAdministrationFailureReason.TARGET_SCOPE_MISMATCH
+            )
+
         if target.role is EnterpriseWorkspaceRole.OWNER:
             raise EnterpriseMembershipAdministrationError(
                 MembershipAdministrationFailureReason.OWNER_ROLE_REQUIRES_TRANSFER
             )
 
-        raise EnterpriseMembershipAdministrationError(
-            MembershipAdministrationFailureReason.TRANSACTION_REQUIRED
+        now = self._now()
+
+        previous_owner = actor.model_copy(
+            update={
+                "role": EnterpriseWorkspaceRole.ADMIN,
+                "updated_at": now,
+            }
+        )
+        new_owner = target.model_copy(
+            update={
+                "role": EnterpriseWorkspaceRole.OWNER,
+                "updated_at": now,
+            }
+        )
+
+        updated = self._memberships.update_many_atomic(
+            (
+                previous_owner,
+                new_owner,
+            )
+        )
+
+        if len(updated) != 2:
+            raise RuntimeError("ownership transfer repository returned an invalid atomic result")
+
+        return (
+            updated[0],
+            updated[1],
         )
 
     def _require_permission(

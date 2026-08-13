@@ -773,3 +773,167 @@ def test_repository_protocol_shapes_are_satisfied() -> None:
         )
         is None
     )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_atomic_membership_update_commits_all_records(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    _, _, memberships = _repositories(
+        backend=backend,
+        database_path=tmp_path / "enterprise.db",
+    )
+
+    first = _membership(
+        membership_id="membership_first",
+        user_id="user_first",
+        role=EnterpriseWorkspaceRole.OWNER,
+    )
+    second = _membership(
+        membership_id="membership_second",
+        user_id="user_second",
+        role=EnterpriseWorkspaceRole.ADMIN,
+    )
+
+    memberships.create(first)
+    memberships.create(second)
+
+    updated_at = NOW + timedelta(minutes=1)
+
+    updated_first = first.model_copy(
+        update={
+            "role": EnterpriseWorkspaceRole.ADMIN,
+            "updated_at": updated_at,
+        }
+    )
+    updated_second = second.model_copy(
+        update={
+            "role": EnterpriseWorkspaceRole.OWNER,
+            "updated_at": updated_at,
+        }
+    )
+
+    result = memberships.update_many_atomic(
+        (
+            updated_first,
+            updated_second,
+        )
+    )
+
+    assert result == (
+        updated_first,
+        updated_second,
+    )
+    assert memberships.get_by_id("membership_first") == updated_first
+    assert memberships.get_by_id("membership_second") == updated_second
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_atomic_membership_update_rolls_back_every_record(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    _, _, memberships = _repositories(
+        backend=backend,
+        database_path=tmp_path / "enterprise.db",
+    )
+
+    existing = _membership(
+        membership_id="membership_existing",
+        user_id="user_existing",
+        role=EnterpriseWorkspaceRole.OWNER,
+    )
+    memberships.create(existing)
+
+    updated_existing = existing.model_copy(
+        update={
+            "role": EnterpriseWorkspaceRole.ADMIN,
+            "updated_at": NOW + timedelta(minutes=1),
+        }
+    )
+    missing = _membership(
+        membership_id="membership_missing",
+        user_id="user_missing",
+        role=EnterpriseWorkspaceRole.OWNER,
+        created_at=NOW + timedelta(minutes=1),
+        updated_at=NOW + timedelta(minutes=1),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="unknown enterprise membership",
+    ):
+        memberships.update_many_atomic(
+            (
+                updated_existing,
+                missing,
+            )
+        )
+
+    assert memberships.get_by_id("membership_existing") == existing
+    assert memberships.get_by_id("membership_missing") is None
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_atomic_membership_update_rejects_duplicate_ids(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    _, _, memberships = _repositories(
+        backend=backend,
+        database_path=tmp_path / "enterprise.db",
+    )
+
+    membership = _membership(
+        membership_id="membership_duplicate",
+    )
+    memberships.create(membership)
+
+    updated = membership.model_copy(
+        update={
+            "updated_at": NOW + timedelta(minutes=1),
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="requires unique membership ids",
+    ):
+        memberships.update_many_atomic(
+            (
+                updated,
+                updated,
+            )
+        )
+
+    assert memberships.get_by_id("membership_duplicate") == membership
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_atomic_membership_update_rejects_empty_batch(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    _, _, memberships = _repositories(
+        backend=backend,
+        database_path=tmp_path / "enterprise.db",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="requires at least one record",
+    ):
+        memberships.update_many_atomic(())
