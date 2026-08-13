@@ -20,6 +20,11 @@ from app.v2.repositories.long_document_audit import (
     LongDocumentAuditRepository,
     SQLiteLongDocumentAuditRepository,
 )
+from app.v2.repositories.observability import (
+    InMemoryObservabilityEventRepository,
+    ObservabilityEventRepository,
+    SQLiteObservabilityEventRepository,
+)
 from app.v2.services.claim_lock_preparation import (
     ClaimLockPreparationService,
 )
@@ -41,6 +46,9 @@ from app.v2.services.long_document_rewrite_service import (
 from app.v2.services.multi_candidate_rewrite_service import (
     MultiCandidateWorkspaceRewriteService,
 )
+from app.v2.services.observability_recording_service import (
+    ObservabilityRecordingService,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -49,6 +57,9 @@ from app.v2.services.section_rewrite_orchestrator import (
 )
 from app.v2.services.section_rewrite_planner import (
     SectionRewritePlanner,
+)
+from app.v2.services.single_rewrite_observability import (
+    SingleRewriteObservability,
 )
 from app.v2.services.voice_aware_provider import (
     VoiceAwareRewriteProvider,
@@ -153,6 +164,28 @@ class V2Services:
             repository=(long_document_audit_repository),
         )
 
+        if resolved_persistence.backend is PersistenceBackend.MEMORY:
+            observability_repository: ObservabilityEventRepository = (
+                InMemoryObservabilityEventRepository()
+            )
+        elif resolved_persistence.backend is PersistenceBackend.SQLITE:
+            if resolved_persistence.sqlite_path is None:
+                raise ValueError("SQLite persistence requires a database path.")
+
+            observability_repository = SQLiteObservabilityEventRepository(
+                database_path=(resolved_persistence.sqlite_path),
+            )
+        else:
+            raise RuntimeError("Unsupported observability persistence backend.")
+
+        self.observability_recording = ObservabilityRecordingService(
+            repository=(observability_repository),
+        )
+
+        self.single_rewrite_observability = SingleRewriteObservability(
+            recording_service=(self.observability_recording),
+        )
+
         self.long_document = LongDocumentWorkspaceRewriteService(
             workspace_service=self.workspace,
             claim_lock_preparation_service=(self.claim_lock_preparation),
@@ -173,6 +206,7 @@ class V2Services:
             history_service=self.history,
             workflow=resolved_workflow,
             claim_lock_preparation_service=(self.claim_lock_preparation),
+            observability=(self.single_rewrite_observability),
         )
 
         self.multi_candidate = MultiCandidateWorkspaceRewriteService(
