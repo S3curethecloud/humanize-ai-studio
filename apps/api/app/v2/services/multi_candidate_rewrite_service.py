@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from time import perf_counter
 
 from app.domain.models import (
     RewriteRequest,
@@ -64,6 +66,9 @@ from app.v2.services.claim_lock_validator import (
     ClaimLockValidationResult,
     ClaimLockValidator,
 )
+from app.v2.services.complex_rewrite_observability import (
+    MultiCandidateObservability,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -121,9 +126,13 @@ class MultiCandidateWorkspaceRewriteService:
         claim_lock_validator: ClaimLockValidator | None = None,
         ranker: CandidateRanker | None = None,
         audit_builder: CandidateAuditBuilder | None = None,
+        observability: MultiCandidateObservability | None = None,
+        duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
         self._workspace_service = workspace_service
         self._history_service = history_service
+        self._observability = observability
+        self._duration_clock = duration_clock
         self._voice_guidance_service = voice_guidance_service
         self._voice_provider = voice_provider
 
@@ -158,6 +167,8 @@ class MultiCandidateWorkspaceRewriteService:
         ] = (),
         claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
     ) -> MultiCandidateWorkspaceRewriteResult:
+        started_at = self._duration_clock()
+
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -242,6 +253,25 @@ class MultiCandidateWorkspaceRewriteService:
             ),
             candidate_audit_snapshot=(audit_snapshot),
         )
+
+        if self._observability is not None:
+            duration_ms = max(
+                0.0,
+                (self._duration_clock() - started_at) * 1000.0,
+            )
+
+            self._observability.record_success(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                request=request,
+                selected_response=(selected_response),
+                generated_responses=(controlled.generation.responses),
+                history=history,
+                claim_lock_validation=(selected_claim_lock_validation),
+                candidate_count=len(controlled.generation.candidate_set.candidates),
+                candidate_set_id=(audit_snapshot.candidate_set_id),
+                duration_ms=duration_ms,
+            )
 
         return MultiCandidateWorkspaceRewriteResult(
             selected_response=selected_response,

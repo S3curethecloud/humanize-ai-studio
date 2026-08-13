@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from time import perf_counter
 
 from app.domain.models import RewriteRequest
 from app.v2.domain.claim_lock import (
@@ -18,6 +20,9 @@ from app.v2.services.claim_lock_extractor import (
 from app.v2.services.claim_lock_preparation import (
     ClaimLockPreparationResult,
     ClaimLockPreparationService,
+)
+from app.v2.services.complex_rewrite_observability import (
+    LongDocumentObservability,
 )
 from app.v2.services.document_reconstructor import (
     DocumentReconstructor,
@@ -63,6 +68,8 @@ class LongDocumentWorkspaceRewriteService:
         control_evaluator: LongDocumentControlEvaluator,
         reconstructor: DocumentReconstructor,
         audit_service: LongDocumentAuditService,
+        observability: LongDocumentObservability | None = None,
+        duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
         self._workspace_service = workspace_service
         self._claim_lock_preparation_service = claim_lock_preparation_service
@@ -72,6 +79,8 @@ class LongDocumentWorkspaceRewriteService:
         self._control_evaluator = control_evaluator
         self._reconstructor = reconstructor
         self._audit_service = audit_service
+        self._observability = observability
+        self._duration_clock = duration_clock
 
     def execute(
         self,
@@ -85,6 +94,8 @@ class LongDocumentWorkspaceRewriteService:
         ] = (),
         claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
     ) -> LongDocumentWorkspaceRewriteResult:
+        started_at = self._duration_clock()
+
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -126,6 +137,22 @@ class LongDocumentWorkspaceRewriteService:
             evaluation=evaluation,
             reconstruction=reconstruction,
         )
+
+        if self._observability is not None:
+            duration_ms = max(
+                0.0,
+                (self._duration_clock() - started_at) * 1000.0,
+            )
+
+            self._observability.record_success(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                request=request,
+                evaluation=evaluation,
+                reconstruction=reconstruction,
+                audit=audit,
+                duration_ms=duration_ms,
+            )
 
         return LongDocumentWorkspaceRewriteResult(
             claim_lock_preparation=(claim_lock_preparation),

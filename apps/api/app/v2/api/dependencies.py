@@ -28,6 +28,10 @@ from app.v2.repositories.observability import (
 from app.v2.services.claim_lock_preparation import (
     ClaimLockPreparationService,
 )
+from app.v2.services.complex_rewrite_observability import (
+    LongDocumentObservability,
+    MultiCandidateObservability,
+)
 from app.v2.services.document_reconstructor import (
     DocumentReconstructor,
 )
@@ -186,6 +190,14 @@ class V2Services:
             recording_service=(self.observability_recording),
         )
 
+        self.multi_candidate_observability = MultiCandidateObservability(
+            recording_service=(self.observability_recording),
+        )
+
+        self.long_document_observability = LongDocumentObservability(
+            recording_service=(self.observability_recording),
+        )
+
         self.long_document = LongDocumentWorkspaceRewriteService(
             workspace_service=self.workspace,
             claim_lock_preparation_service=(self.claim_lock_preparation),
@@ -199,6 +211,7 @@ class V2Services:
             control_evaluator=(LongDocumentControlEvaluator()),
             reconstructor=DocumentReconstructor(),
             audit_service=(self.long_document_audit),
+            observability=(self.long_document_observability),
         )
 
         self.rewrite = WorkspaceRewriteService(
@@ -216,6 +229,7 @@ class V2Services:
             voice_guidance_service=self.voice_rewrite_guidance,
             voice_provider=resolved_voice_provider,
             claim_lock_preparation_service=(self.claim_lock_preparation),
+            observability=(self.multi_candidate_observability),
         )
 
         self.voice_rewrite = None
