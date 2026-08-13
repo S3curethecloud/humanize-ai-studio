@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -12,6 +14,9 @@ from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
 from app.v2.domain.models import VoiceProfileStatus
+from app.v2.domain.observability import (
+    WorkspaceAnalyticsSnapshot,
+)
 from app.v2.services.candidate_control_enforcement import (
     CandidateClaimLockViolationError,
 )
@@ -44,6 +49,9 @@ from app.v2.services.voice_profile_service import (
 from app.v2.services.voice_rewrite_guidance import (
     VoiceProfileAnalysisRequiredError,
     VoiceProfileInactiveError,
+)
+from app.v2.services.workspace_analytics_query_service import (
+    WorkspaceAnalyticsQueryLimitError,
 )
 
 __all__ = [
@@ -156,6 +164,43 @@ def list_workspace_history(
         workspace_id=workspace_id,
         records=records,
     )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/analytics",
+    response_model=WorkspaceAnalyticsSnapshot,
+)
+def get_workspace_analytics(
+    workspace_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> WorkspaceAnalyticsSnapshot:
+    try:
+        return services.workspace_analytics.query(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except WorkspaceAnalyticsQueryLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(

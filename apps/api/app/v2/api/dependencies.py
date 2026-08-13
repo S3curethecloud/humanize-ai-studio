@@ -77,6 +77,12 @@ from app.v2.services.voice_profile_service import (
 from app.v2.services.voice_rewrite_guidance import (
     VoiceRewriteGuidanceService,
 )
+from app.v2.services.workspace_analytics_aggregator import (
+    WorkspaceAnalyticsAggregator,
+)
+from app.v2.services.workspace_analytics_query_service import (
+    WorkspaceAnalyticsQueryService,
+)
 from app.v2.services.workspace_rewrite_service import (
     WorkspaceRewriteService,
 )
@@ -184,6 +190,12 @@ class V2Services:
 
         self.observability_recording = ObservabilityRecordingService(
             repository=(observability_repository),
+        )
+
+        self.workspace_analytics = WorkspaceAnalyticsQueryService(
+            workspace_service=self.workspace,
+            repository=observability_repository,
+            aggregator=(WorkspaceAnalyticsAggregator()),
         )
 
         self.single_rewrite_observability = SingleRewriteObservability(
