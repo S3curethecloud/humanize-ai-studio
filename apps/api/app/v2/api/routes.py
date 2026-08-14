@@ -29,6 +29,9 @@ from app.v2.services.claim_lock_validator import (
 from app.v2.services.document_reconstructor import (
     DocumentReconstructionIntegrityError,
 )
+from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
+    EnterpriseQuotaAdmissionDeniedError,
+)
 from app.v2.services.long_document_audit_service import (
     LongDocumentAuditIntegrityError,
 )
@@ -329,6 +332,11 @@ def create_workspace_rewrite(
             ),
         )
 
+    except EnterpriseQuotaAdmissionDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
     except (
         CandidateClaimLockViolationError,
         CandidateGenerationError,

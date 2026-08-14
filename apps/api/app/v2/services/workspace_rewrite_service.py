@@ -31,6 +31,9 @@ from app.v2.services.claim_lock_validator import (
     ClaimLockValidator,
     ClaimLockViolationError,
 )
+from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
+    EnterpriseSingleRewriteQuotaAdmissionService,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -67,6 +70,7 @@ class WorkspaceRewriteService:
         workspace_service: WorkspaceService,
         history_service: RewriteHistoryService,
         workflow: RewriteWorkflow,
+        quota_admission: (EnterpriseSingleRewriteQuotaAdmissionService | None) = None,
         claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
         claim_lock_validator: (ClaimLockValidator | None) = None,
         observability: SingleRewriteObservability | None = None,
@@ -75,6 +79,7 @@ class WorkspaceRewriteService:
         self._workspace_service = workspace_service
         self._history_service = history_service
         self._workflow = workflow
+        self._quota_admission = quota_admission
         self._observability = observability
         self._duration_clock = duration_clock
         self._claim_lock_preparation_service = (
@@ -109,6 +114,12 @@ class WorkspaceRewriteService:
             explicit_terms=explicit_protected_terms,
             enforcement_mode=claim_lock_enforcement_mode,
         )
+
+        if self._quota_admission is not None:
+            self._quota_admission.admit(
+                workspace_id=workspace_id,
+                request=request,
+            )
 
         response = self._workflow.execute(request)
 
