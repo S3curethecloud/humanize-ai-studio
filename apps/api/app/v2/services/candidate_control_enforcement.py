@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.domain.models import (
@@ -106,12 +107,18 @@ class ControlledCandidateRewriteOrchestrator:
             ...,
         ] = (),
         claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
+        pre_generation_hook: (
+            Callable[[ClaimLockPreparationResult], None] | None
+        ) = None,
     ) -> ControlledCandidateGenerationExecution:
         claim_lock_preparation = self._claim_lock_preparation_service.prepare(
             text=request.text,
             explicit_terms=explicit_protected_terms,
             enforcement_mode=(claim_lock_enforcement_mode),
         )
+
+        if pre_generation_hook is not None:
+            pre_generation_hook(claim_lock_preparation)
 
         generation = self._candidate_orchestrator.execute(
             request=request,

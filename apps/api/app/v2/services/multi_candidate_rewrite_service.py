@@ -69,6 +69,9 @@ from app.v2.services.claim_lock_validator import (
 from app.v2.services.complex_rewrite_observability import (
     MultiCandidateObservability,
 )
+from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
+    EnterpriseMultiCandidateQuotaAdmissionService,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -118,6 +121,9 @@ class MultiCandidateWorkspaceRewriteService:
         workspace_service: WorkspaceService,
         history_service: RewriteHistoryService,
         workflow: RewriteWorkflowExecutor,
+        multi_candidate_quota_admission: (
+            EnterpriseMultiCandidateQuotaAdmissionService | None
+        ) = None,
         voice_guidance_service: (VoiceRewriteGuidanceService | None) = None,
         voice_provider: VoiceAwareRewriteProvider | None = None,
         planner: CandidateGenerationPlanner | None = None,
@@ -131,6 +137,9 @@ class MultiCandidateWorkspaceRewriteService:
     ) -> None:
         self._workspace_service = workspace_service
         self._history_service = history_service
+        self._multi_candidate_quota_admission = (
+            multi_candidate_quota_admission
+        )
         self._observability = observability
         self._duration_clock = duration_clock
         self._voice_guidance_service = voice_guidance_service
@@ -186,6 +195,7 @@ class MultiCandidateWorkspaceRewriteService:
         )
 
         controlled = self._execute_controlled(
+            workspace_id=workspace_id,
             request=request,
             plan=plan,
             voice_guidance=voice_guidance,
@@ -310,6 +320,7 @@ class MultiCandidateWorkspaceRewriteService:
     def _execute_controlled(
         self,
         *,
+        workspace_id: str,
         request: RewriteRequest,
         plan: CandidateGenerationPlan,
         voice_guidance: VoiceRewriteGuidance | None,
@@ -319,12 +330,29 @@ class MultiCandidateWorkspaceRewriteService:
         ],
         claim_lock_enforcement_mode: (ClaimLockEnforcementMode),
     ) -> ControlledCandidateGenerationExecution:
+        quota_admission = (
+            self._multi_candidate_quota_admission
+        )
+
+        def pre_generation_hook(
+            _claim_lock_preparation: ClaimLockPreparationResult,
+        ) -> None:
+            if quota_admission is None:
+                return
+
+            quota_admission.admit(
+                workspace_id=workspace_id,
+                request=request,
+                candidate_count=plan.candidate_count,
+            )
+
         if voice_guidance is None:
             return self._controlled_orchestrator.execute(
                 request=request,
                 plan=plan,
                 explicit_protected_terms=(explicit_protected_terms),
                 claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+                pre_generation_hook=pre_generation_hook,
             )
 
         if self._voice_provider is None:
@@ -338,6 +366,7 @@ class MultiCandidateWorkspaceRewriteService:
                 plan=plan,
                 explicit_protected_terms=(explicit_protected_terms),
                 claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+                pre_generation_hook=pre_generation_hook,
             )
 
     @staticmethod
