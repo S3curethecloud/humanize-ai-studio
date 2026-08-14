@@ -407,6 +407,11 @@ def create_workspace_long_document_rewrite(
             ),
         )
 
+    except EnterpriseQuotaAdmissionDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -30,6 +30,9 @@ from app.v2.services.document_reconstructor import (
 from app.v2.services.document_structure_detector import (
     DocumentStructureDetector,
 )
+from app.v2.services.enterprise_long_document_quota_admission_service import (
+    EnterpriseLongDocumentQuotaAdmissionService,
+)
 from app.v2.services.long_document_audit_service import (
     LongDocumentAuditService,
 )
@@ -63,6 +66,9 @@ class LongDocumentWorkspaceRewriteService:
         workspace_service: WorkspaceService,
         claim_lock_preparation_service: ClaimLockPreparationService,
         structure_detector: DocumentStructureDetector,
+        long_document_quota_admission: (
+            EnterpriseLongDocumentQuotaAdmissionService | None
+        ) = None,
         planner: SectionRewritePlanner,
         orchestrator: SectionRewriteOrchestrator,
         control_evaluator: LongDocumentControlEvaluator,
@@ -74,6 +80,9 @@ class LongDocumentWorkspaceRewriteService:
         self._workspace_service = workspace_service
         self._claim_lock_preparation_service = claim_lock_preparation_service
         self._structure_detector = structure_detector
+        self._long_document_quota_admission = (
+            long_document_quota_admission
+        )
         self._planner = planner
         self._orchestrator = orchestrator
         self._control_evaluator = control_evaluator
@@ -115,6 +124,13 @@ class LongDocumentWorkspaceRewriteService:
         plan = self._planner.plan(
             structure=structure,
         )
+
+        if self._long_document_quota_admission is not None:
+            self._long_document_quota_admission.admit(
+                workspace_id=workspace_id,
+                request=request,
+                section_count=len(plan.entries),
+            )
 
         execution = self._orchestrator.execute(
             request=request,
