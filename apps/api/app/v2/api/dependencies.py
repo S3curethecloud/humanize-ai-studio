@@ -38,6 +38,18 @@ from app.v2.services.document_reconstructor import (
 from app.v2.services.document_structure_detector import (
     DocumentStructureDetector,
 )
+from app.v2.services.enterprise_long_document_quota_admission_service import (
+    EnterpriseLongDocumentQuotaAdmissionService,
+)
+from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
+    EnterpriseMultiCandidateQuotaAdmissionService,
+)
+from app.v2.services.enterprise_quota_runtime import (
+    EnterpriseQuotaRuntime,
+)
+from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
+    EnterpriseSingleRewriteQuotaAdmissionService,
+)
 from app.v2.services.long_document_audit_service import (
     LongDocumentAuditService,
 )
@@ -102,6 +114,7 @@ class V2Services:
         voice_aware_provider: (VoiceAwareRewriteProvider | None) = None,
         persistence_settings: (V2PersistenceSettings | None) = None,
         voice_audit_auth_settings: (VoiceAuditAuthenticitySettings | None) = None,
+        quota_runtime: EnterpriseQuotaRuntime | None = None,
     ) -> None:
         resolved_persistence = persistence_settings or V2PersistenceSettings.from_environment()
         resolved_voice_audit_auth = (
@@ -154,6 +167,30 @@ class V2Services:
             )
 
         self.claim_lock_preparation = ClaimLockPreparationService()
+
+        single_rewrite_quota_admission = None
+        multi_candidate_quota_admission = None
+        long_document_quota_admission = None
+
+        if quota_runtime is not None:
+            single_rewrite_quota_admission = (
+                EnterpriseSingleRewriteQuotaAdmissionService(
+                    runtime_context=quota_runtime.runtime_context,
+                    enforcement=quota_runtime.enforcement,
+                )
+            )
+            multi_candidate_quota_admission = (
+                EnterpriseMultiCandidateQuotaAdmissionService(
+                    runtime_context=quota_runtime.runtime_context,
+                    enforcement=quota_runtime.enforcement,
+                )
+            )
+            long_document_quota_admission = (
+                EnterpriseLongDocumentQuotaAdmissionService(
+                    runtime_context=quota_runtime.runtime_context,
+                    enforcement=quota_runtime.enforcement,
+                )
+            )
 
         if resolved_persistence.backend is PersistenceBackend.MEMORY:
             long_document_audit_repository: LongDocumentAuditRepository = (
@@ -223,6 +260,7 @@ class V2Services:
             control_evaluator=(LongDocumentControlEvaluator()),
             reconstructor=DocumentReconstructor(),
             audit_service=(self.long_document_audit),
+            long_document_quota_admission=(long_document_quota_admission),
             observability=(self.long_document_observability),
         )
 
@@ -230,6 +268,7 @@ class V2Services:
             workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
+            quota_admission=(single_rewrite_quota_admission),
             claim_lock_preparation_service=(self.claim_lock_preparation),
             observability=(self.single_rewrite_observability),
         )
@@ -238,6 +277,9 @@ class V2Services:
             workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
+            multi_candidate_quota_admission=(
+                multi_candidate_quota_admission
+            ),
             voice_guidance_service=self.voice_rewrite_guidance,
             voice_provider=resolved_voice_provider,
             claim_lock_preparation_service=(self.claim_lock_preparation),
