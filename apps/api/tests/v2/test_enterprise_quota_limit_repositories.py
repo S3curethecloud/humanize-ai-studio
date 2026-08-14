@@ -782,6 +782,223 @@ def test_concurrent_overlapping_limit_creation_has_one_winner(
     assert len(stored) == 1
 
 
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_resolve_at_returns_active_authoritative_limit(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    repository = _repository(
+        backend=backend,
+        database_path=tmp_path / "quota.db",
+    )
+
+    quota_limit = _limit(
+        quota_limit_id="active",
+    )
+    repository.create(quota_limit)
+
+    assert (
+        repository.resolve_at(
+            workspace_id="workspace_test",
+            dimension=EnterpriseQuotaDimension.REWRITE_REQUESTS,
+            occurred_at=WINDOW.window_start + timedelta(hours=1),
+        )
+        == quota_limit
+    )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_resolve_at_includes_window_start(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    repository = _repository(
+        backend=backend,
+        database_path=tmp_path / "quota.db",
+    )
+
+    quota_limit = _limit(
+        quota_limit_id="window_start",
+    )
+    repository.create(quota_limit)
+
+    assert (
+        repository.resolve_at(
+            workspace_id="workspace_test",
+            dimension=EnterpriseQuotaDimension.REWRITE_REQUESTS,
+            occurred_at=WINDOW.window_start,
+        )
+        == quota_limit
+    )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_resolve_at_excludes_window_end(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    repository = _repository(
+        backend=backend,
+        database_path=tmp_path / "quota.db",
+    )
+
+    repository.create(
+        _limit(
+            quota_limit_id="window_end",
+        )
+    )
+
+    assert (
+        repository.resolve_at(
+            workspace_id="workspace_test",
+            dimension=EnterpriseQuotaDimension.REWRITE_REQUESTS,
+            occurred_at=WINDOW.window_end,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_resolve_at_boundary_selects_adjacent_window(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    repository = _repository(
+        backend=backend,
+        database_path=tmp_path / "quota.db",
+    )
+
+    next_window = EnterpriseQuotaWindow(
+        window_start=WINDOW.window_end,
+        window_end=WINDOW.window_end + timedelta(days=1),
+    )
+
+    repository.create(
+        _limit(
+            quota_limit_id="first",
+        )
+    )
+
+    second = _limit(
+        quota_limit_id="second",
+        window=next_window,
+    )
+    repository.create(second)
+
+    assert (
+        repository.resolve_at(
+            workspace_id="workspace_test",
+            dimension=EnterpriseQuotaDimension.REWRITE_REQUESTS,
+            occurred_at=WINDOW.window_end,
+        )
+        == second
+    )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_resolve_at_equivalent_timezone_resolves(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    repository = _repository(
+        backend=backend,
+        database_path=tmp_path / "quota.db",
+    )
+
+    quota_limit = _limit(
+        quota_limit_id="timezone_active",
+    )
+    repository.create(quota_limit)
+
+    offset = timezone(timedelta(hours=-7))
+    occurred_at = (
+        WINDOW.window_start + timedelta(hours=1)
+    ).astimezone(offset)
+
+    assert (
+        repository.resolve_at(
+            workspace_id="workspace_test",
+            dimension=EnterpriseQuotaDimension.REWRITE_REQUESTS,
+            occurred_at=occurred_at,
+        )
+        == quota_limit
+    )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_resolve_at_missing_returns_none(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    repository = _repository(
+        backend=backend,
+        database_path=tmp_path / "quota.db",
+    )
+
+    assert (
+        repository.resolve_at(
+            workspace_id="workspace_test",
+            dimension=EnterpriseQuotaDimension.REWRITE_REQUESTS,
+            occurred_at=WINDOW.window_start,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "backend",
+    ("memory", "sqlite"),
+)
+def test_resolve_at_rejects_naive_timestamp(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    repository = _repository(
+        backend=backend,
+        database_path=tmp_path / "quota.db",
+    )
+
+    repository.create(
+        _limit(
+            quota_limit_id="timezone_required",
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="timestamps must be timezone-aware",
+    ):
+        repository.resolve_at(
+            workspace_id="workspace_test",
+            dimension=EnterpriseQuotaDimension.REWRITE_REQUESTS,
+            occurred_at=datetime(
+                2026,
+                8,
+                13,
+                17,
+                0,
+            ),
+        )
+
+
 def test_repository_protocol_shape(
     tmp_path: Path,
 ) -> None:
@@ -808,6 +1025,15 @@ def test_repository_protocol_shape(
                 workspace_id=(quota_limit.workspace_id),
                 dimension=(quota_limit.dimension),
                 window=quota_limit.window,
+            )
+            == quota_limit
+        )
+
+        assert (
+            repository.resolve_at(
+                workspace_id=(quota_limit.workspace_id),
+                dimension=(quota_limit.dimension),
+                occurred_at=quota_limit.window.window_start,
             )
             == quota_limit
         )

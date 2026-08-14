@@ -32,6 +32,14 @@ class EnterpriseQuotaLimitRepository(Protocol):
         window: EnterpriseQuotaWindow,
     ) -> EnterpriseWorkspaceQuotaLimit | None: ...
 
+    def resolve_at(
+        self,
+        *,
+        workspace_id: str,
+        dimension: EnterpriseQuotaDimension,
+        occurred_at: datetime,
+    ) -> EnterpriseWorkspaceQuotaLimit | None: ...
+
     def list_for_workspace_dimension(
         self,
         *,
@@ -95,6 +103,31 @@ class InMemoryEnterpriseQuotaLimitRepository:
                     and _windows_match(
                         stored.window,
                         window,
+                    )
+                )
+            )
+
+        return _require_unambiguous_resolution(matches)
+
+    def resolve_at(
+        self,
+        *,
+        workspace_id: str,
+        dimension: EnterpriseQuotaDimension,
+        occurred_at: datetime,
+    ) -> EnterpriseWorkspaceQuotaLimit | None:
+        canonical_occurred_at = _canonical_datetime(occurred_at)
+
+        with self._lock:
+            matches = tuple(
+                stored
+                for stored in self._limits.values()
+                if (
+                    stored.workspace_id == workspace_id
+                    and stored.dimension is dimension
+                    and _window_contains(
+                        stored.window,
+                        canonical_occurred_at,
                     )
                 )
             )
@@ -220,6 +253,44 @@ class SQLiteEnterpriseQuotaLimitRepository:
 
         matches = tuple(
             EnterpriseWorkspaceQuotaLimit.model_validate_json(row["payload"]) for row in rows
+        )
+
+        return _require_unambiguous_resolution(matches)
+
+    def resolve_at(
+        self,
+        *,
+        workspace_id: str,
+        dimension: EnterpriseQuotaDimension,
+        occurred_at: datetime,
+    ) -> EnterpriseWorkspaceQuotaLimit | None:
+        canonical_occurred_at = _canonical_timestamp(occurred_at)
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload
+                FROM enterprise_quota_limits
+                WHERE workspace_id = ?
+                  AND dimension = ?
+                  AND window_start <= ?
+                  AND window_end > ?
+                ORDER BY quota_limit_id ASC
+                LIMIT 2
+                """,
+                (
+                    workspace_id,
+                    dimension.value,
+                    canonical_occurred_at,
+                    canonical_occurred_at,
+                ),
+            ).fetchall()
+
+        matches = tuple(
+            EnterpriseWorkspaceQuotaLimit.model_validate_json(
+                row["payload"]
+            )
+            for row in rows
         )
 
         return _require_unambiguous_resolution(matches)
@@ -421,6 +492,19 @@ def _windows_overlap(
     return _canonical_datetime(left.window_start) < _canonical_datetime(
         right.window_end
     ) and _canonical_datetime(left.window_end) > _canonical_datetime(right.window_start)
+
+
+def _window_contains(
+    window: EnterpriseQuotaWindow,
+    occurred_at: datetime,
+) -> bool:
+    canonical_occurred_at = _canonical_datetime(occurred_at)
+
+    return (
+        _canonical_datetime(window.window_start)
+        <= canonical_occurred_at
+        < _canonical_datetime(window.window_end)
+    )
 
 
 def _windows_match(
