@@ -41,6 +41,12 @@ from app.v2.services.document_reconstructor import (
 from app.v2.services.document_structure_detector import (
     DocumentStructureDetector,
 )
+from app.v2.services.enterprise_admin_audit_runtime import (
+    EnterpriseAdminAuditRuntime,
+)
+from app.v2.services.enterprise_admin_audit_runtime_factory import (
+    build_enterprise_admin_audit_runtime,
+)
 from app.v2.services.enterprise_authorization_runtime import (
     EnterpriseAuthorizationRuntime,
 )
@@ -134,6 +140,9 @@ class V2Services:
         enterprise_authorization_runtime: (
             EnterpriseAuthorizationRuntime | None
         ) = None,
+        enterprise_admin_audit_runtime: (
+            EnterpriseAdminAuditRuntime | None
+        ) = None,
     ) -> None:
         resolved_persistence = persistence_settings or V2PersistenceSettings.from_environment()
         resolved_voice_audit_auth = (
@@ -142,6 +151,13 @@ class V2Services:
         voice_audit_authenticator = resolved_voice_audit_auth.build_authenticator()
 
         repositories = build_repository_bundle(resolved_persistence)
+
+        self.enterprise_admin_audit = (
+            enterprise_admin_audit_runtime
+            or build_enterprise_admin_audit_runtime(
+                resolved_persistence,
+            )
+        )
 
         self.enterprise_authorization = (
             enterprise_authorization_runtime
