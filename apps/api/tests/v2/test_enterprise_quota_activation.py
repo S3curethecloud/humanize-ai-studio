@@ -166,6 +166,7 @@ def test_enabled_activation_builds_runtime_from_same_persistence(
     persistence = _memory_settings()
 
     runtime = EnterpriseQuotaRuntime(
+        limits=MagicMock(),
         runtime_context=MagicMock(),
         enforcement=MagicMock(),
     )

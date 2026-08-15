@@ -85,6 +85,7 @@ def build_enterprise_quota_runtime(
     )
 
     return EnterpriseQuotaRuntime(
+        limits=limits,
         runtime_context=runtime_context,
         enforcement=enforcement,
     )

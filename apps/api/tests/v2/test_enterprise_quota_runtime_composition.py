@@ -45,6 +45,7 @@ def _runtime() -> tuple[
     )
 
     runtime = EnterpriseQuotaRuntime(
+        limits=MagicMock(),
         runtime_context=runtime_context,
         enforcement=enforcement,
     )
