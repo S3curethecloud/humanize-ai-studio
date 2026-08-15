@@ -41,6 +41,12 @@ from app.v2.services.document_reconstructor import (
 from app.v2.services.document_structure_detector import (
     DocumentStructureDetector,
 )
+from app.v2.services.enterprise_authorization_runtime import (
+    EnterpriseAuthorizationRuntime,
+)
+from app.v2.services.enterprise_authorization_runtime_factory import (
+    build_enterprise_authorization_runtime,
+)
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
 )
@@ -121,6 +127,9 @@ class V2Services:
         persistence_settings: (V2PersistenceSettings | None) = None,
         voice_audit_auth_settings: (VoiceAuditAuthenticitySettings | None) = None,
         quota_runtime: EnterpriseQuotaRuntime | None = None,
+        enterprise_authorization_runtime: (
+            EnterpriseAuthorizationRuntime | None
+        ) = None,
     ) -> None:
         resolved_persistence = persistence_settings or V2PersistenceSettings.from_environment()
         resolved_voice_audit_auth = (
@@ -129,6 +138,13 @@ class V2Services:
         voice_audit_authenticator = resolved_voice_audit_auth.build_authenticator()
 
         repositories = build_repository_bundle(resolved_persistence)
+
+        self.enterprise_authorization = (
+            enterprise_authorization_runtime
+            or build_enterprise_authorization_runtime(
+                resolved_persistence,
+            )
+        )
 
         unit_of_work = None
 
