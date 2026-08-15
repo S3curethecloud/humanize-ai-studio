@@ -53,10 +53,14 @@ from app.v2.services.enterprise_long_document_quota_admission_service import (
 from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
     EnterpriseMultiCandidateQuotaAdmissionService,
 )
+from app.v2.services.enterprise_quota_admin_service import (
+    EnterpriseQuotaAdminService,
+)
 from app.v2.services.enterprise_quota_runtime import (
     EnterpriseQuotaRuntime,
 )
 from app.v2.services.enterprise_quota_runtime_factory import (
+    build_enterprise_quota_limit_repository,
     build_enterprise_quota_runtime,
 )
 from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
@@ -144,6 +148,21 @@ class V2Services:
             or build_enterprise_authorization_runtime(
                 resolved_persistence,
             )
+        )
+
+        quota_limits = (
+            quota_runtime.limits
+            if quota_runtime is not None
+            else build_enterprise_quota_limit_repository(
+                resolved_persistence,
+            )
+        )
+
+        self.quota_admin = EnterpriseQuotaAdminService(
+            limits=quota_limits,
+            authorization_resolver=(
+                self.enterprise_authorization.authorization_resolver
+            ),
         )
 
         unit_of_work = None

@@ -34,17 +34,48 @@ class ExternalEnterpriseQuotaPersistenceUnavailableError(
     pass
 
 
+def build_enterprise_quota_limit_repository(
+    settings: V2PersistenceSettings,
+) -> EnterpriseQuotaLimitRepository:
+    settings.validate()
+
+    if settings.backend is PersistenceBackend.MEMORY:
+        return InMemoryEnterpriseQuotaLimitRepository()
+
+    if settings.backend is PersistenceBackend.SQLITE:
+        if settings.sqlite_path is None:
+            raise ValueError(
+                "SQLite enterprise quota persistence requires "
+                "a database path."
+            )
+
+        return SQLiteEnterpriseQuotaLimitRepository(
+            database_path=settings.sqlite_path,
+        )
+
+    if settings.backend is PersistenceBackend.EXTERNAL:
+        raise ExternalEnterpriseQuotaPersistenceUnavailableError(
+            "External enterprise quota persistence is configured "
+            "but no external quota persistence adapter "
+            "has been installed."
+        )
+
+    raise RuntimeError(
+        "Unsupported enterprise quota persistence backend."
+    )
+
+
 def build_enterprise_quota_runtime(
     settings: V2PersistenceSettings,
 ) -> EnterpriseQuotaRuntime:
-    settings.validate()
+    limits = build_enterprise_quota_limit_repository(
+        settings,
+    )
 
     accounting: EnterpriseQuotaAccountingRepository
-    limits: EnterpriseQuotaLimitRepository
 
     if settings.backend is PersistenceBackend.MEMORY:
         accounting = InMemoryEnterpriseQuotaAccountingRepository()
-        limits = InMemoryEnterpriseQuotaLimitRepository()
 
     elif settings.backend is PersistenceBackend.SQLITE:
         if settings.sqlite_path is None:
@@ -54,9 +85,6 @@ def build_enterprise_quota_runtime(
             )
 
         accounting = SQLiteEnterpriseQuotaAccountingRepository(
-            database_path=settings.sqlite_path,
-        )
-        limits = SQLiteEnterpriseQuotaLimitRepository(
             database_path=settings.sqlite_path,
         )
 
