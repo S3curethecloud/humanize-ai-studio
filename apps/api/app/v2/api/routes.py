@@ -13,6 +13,10 @@ from app.v2.api.dependencies import services
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_quota import (
+    EnterpriseQuotaDimension,
+    EnterpriseWorkspaceQuotaLimit,
+)
 from app.v2.domain.models import VoiceProfileStatus
 from app.v2.domain.observability import (
     WorkspaceAnalyticsSnapshot,
@@ -28,6 +32,10 @@ from app.v2.services.claim_lock_validator import (
 )
 from app.v2.services.document_reconstructor import (
     DocumentReconstructionIntegrityError,
+)
+from app.v2.services.enterprise_quota_admin_service import (
+    EnterpriseQuotaAdministrationError,
+    QuotaAdministrationFailureReason,
 )
 from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
     EnterpriseQuotaAdmissionDeniedError,
@@ -68,11 +76,14 @@ from app.v2.api.models import (
     ArchiveVoiceProfileRequest,
     CandidateControlRewriteEvidence,
     ClaimLockRewriteEvidence,
+    CreateEnterpriseQuotaLimitRequest,
     CreateUserRequest,
     CreateUserResponse,
     CreateVoiceProfileRequest,
     CreateWorkspaceRequest,
     CreateWorkspaceResponse,
+    EnterpriseQuotaLimitListResponse,
+    EnterpriseQuotaLimitResponse,
     MultiCandidateRewriteEvidence,
     UpdateVoiceProfileRequest,
     VoiceProfileAnalysisResponse,
@@ -90,6 +101,41 @@ router = APIRouter(
     prefix="/api/v2",
     tags=["v2"],
 )
+
+
+def _quota_admin_http_exception(
+    exc: EnterpriseQuotaAdministrationError,
+) -> HTTPException:
+    if exc.reason in {
+        QuotaAdministrationFailureReason.AUTHORIZATION_RESOLUTION_FAILED,
+        QuotaAdministrationFailureReason.AUTHORIZATION_DENIED,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=exc.reason.value,
+        )
+
+    if (
+        exc.reason
+        is QuotaAdministrationFailureReason.LIMIT_NOT_FOUND
+    ):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=exc.reason.value,
+        )
+
+    if (
+        exc.reason
+        is QuotaAdministrationFailureReason.LIMIT_SCOPE_MISMATCH
+    ):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.reason.value,
+        )
+
+    raise RuntimeError(
+        "unsupported enterprise quota administration failure reason"
+    )
 
 
 @router.post(
@@ -131,6 +177,102 @@ def create_workspace(
 
     return CreateWorkspaceResponse(
         workspace=workspace,
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/quota-limits",
+    response_model=EnterpriseQuotaLimitResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_enterprise_quota_limit(
+    workspace_id: str,
+    request: CreateEnterpriseQuotaLimitRequest,
+) -> EnterpriseQuotaLimitResponse:
+    quota_limit = EnterpriseWorkspaceQuotaLimit(
+        quota_limit_id=request.quota_limit_id,
+        workspace_id=workspace_id,
+        dimension=request.dimension,
+        window=request.window,
+        limit=request.limit,
+    )
+
+    try:
+        created = services.quota_admin.create_limit(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            quota_limit=quota_limit,
+        )
+    except EnterpriseQuotaAdministrationError as exc:
+        raise _quota_admin_http_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return EnterpriseQuotaLimitResponse(
+        quota_limit=created,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/quota-limits",
+    response_model=EnterpriseQuotaLimitListResponse,
+)
+def list_enterprise_quota_limits(
+    workspace_id: str,
+    dimension: EnterpriseQuotaDimension,
+    actor_user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=10000,
+    ),
+) -> EnterpriseQuotaLimitListResponse:
+    try:
+        quota_limits = services.quota_admin.list_limits(
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+            dimension=dimension,
+            limit=limit,
+        )
+    except EnterpriseQuotaAdministrationError as exc:
+        raise _quota_admin_http_exception(exc) from exc
+
+    return EnterpriseQuotaLimitListResponse(
+        workspace_id=workspace_id,
+        dimension=dimension,
+        quota_limits=quota_limits,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/quota-limits/{quota_limit_id}",
+    response_model=EnterpriseQuotaLimitResponse,
+)
+def get_enterprise_quota_limit(
+    workspace_id: str,
+    quota_limit_id: str,
+    actor_user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> EnterpriseQuotaLimitResponse:
+    try:
+        quota_limit = services.quota_admin.get_limit(
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+            quota_limit_id=quota_limit_id,
+        )
+    except EnterpriseQuotaAdministrationError as exc:
+        raise _quota_admin_http_exception(exc) from exc
+
+    return EnterpriseQuotaLimitResponse(
+        quota_limit=quota_limit,
     )
 
 

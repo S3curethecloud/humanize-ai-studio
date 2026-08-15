@@ -21,6 +21,11 @@ from app.v2.domain.candidate_ranking import (
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_quota import (
+    EnterpriseQuotaDimension,
+    EnterpriseQuotaWindow,
+    EnterpriseWorkspaceQuotaLimit,
+)
 from app.v2.domain.long_document_audit import (
     LongDocumentAuditRecord,
 )
@@ -88,6 +93,37 @@ class CreateUserResponse(BaseModel):
 
 class CreateWorkspaceResponse(BaseModel):
     workspace: WorkspaceRecord
+
+
+class CreateEnterpriseQuotaLimitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    quota_limit_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    dimension: EnterpriseQuotaDimension
+    window: EnterpriseQuotaWindow
+    limit: int = Field(
+        ge=0,
+    )
+
+
+class EnterpriseQuotaLimitResponse(BaseModel):
+    quota_limit: EnterpriseWorkspaceQuotaLimit
+
+
+class EnterpriseQuotaLimitListResponse(BaseModel):
+    workspace_id: str
+    dimension: EnterpriseQuotaDimension
+    quota_limits: tuple[
+        EnterpriseWorkspaceQuotaLimit,
+        ...,
+    ]
 
 
 class WorkspaceRewriteRequest(BaseModel):
