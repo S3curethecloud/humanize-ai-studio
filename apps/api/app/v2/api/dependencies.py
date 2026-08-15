@@ -4,6 +4,9 @@ from app.core.settings import Settings
 from app.providers.registry import (
     build_rewrite_provider,
 )
+from app.v2.config.enterprise_quota import (
+    EnterpriseQuotaActivationSettings,
+)
 from app.v2.config.persistence import (
     PersistenceBackend,
     V2PersistenceSettings,
@@ -46,6 +49,9 @@ from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
 )
 from app.v2.services.enterprise_quota_runtime import (
     EnterpriseQuotaRuntime,
+)
+from app.v2.services.enterprise_quota_runtime_factory import (
+    build_enterprise_quota_runtime,
 )
 from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
     EnterpriseSingleRewriteQuotaAdmissionService,
@@ -296,4 +302,26 @@ class V2Services:
             )
 
 
-services = V2Services()
+def build_v2_services_from_environment() -> V2Services:
+    persistence_settings = (
+        V2PersistenceSettings.from_environment()
+    )
+    quota_activation = (
+        EnterpriseQuotaActivationSettings.from_environment()
+    )
+
+    quota_runtime = (
+        build_enterprise_quota_runtime(
+            persistence_settings,
+        )
+        if quota_activation.enabled
+        else None
+    )
+
+    return V2Services(
+        persistence_settings=persistence_settings,
+        quota_runtime=quota_runtime,
+    )
+
+
+services = build_v2_services_from_environment()
