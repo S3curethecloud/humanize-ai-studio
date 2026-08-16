@@ -120,28 +120,9 @@ class SQLiteEnterpriseAdminAuditRepository:
     ) -> EnterpriseAdminAuditEvent:
         try:
             with self._connect() as connection:
-                connection.execute(
-                    """
-                    INSERT INTO enterprise_admin_audit_events (
-                        audit_event_id,
-                        workspace_id,
-                        actor_user_id,
-                        action,
-                        outcome,
-                        occurred_at,
-                        payload
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        event.audit_event_id,
-                        event.workspace_id,
-                        event.actor_user_id,
-                        event.action.value,
-                        event.outcome.value,
-                        event.occurred_at.isoformat(),
-                        event.model_dump_json(),
-                    ),
+                _insert_event(
+                    connection=connection,
+                    event=event,
                 )
         except sqlite3.IntegrityError as exc:
             raise ValueError(
@@ -267,6 +248,36 @@ class SQLiteEnterpriseAdminAuditRepository:
         connection.row_factory = sqlite3.Row
 
         return connection
+
+
+def _insert_event(
+    *,
+    connection: sqlite3.Connection,
+    event: EnterpriseAdminAuditEvent,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO enterprise_admin_audit_events (
+            audit_event_id,
+            workspace_id,
+            actor_user_id,
+            action,
+            outcome,
+            occurred_at,
+            payload
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event.audit_event_id,
+            event.workspace_id,
+            event.actor_user_id,
+            event.action.value,
+            event.outcome.value,
+            event.occurred_at.isoformat(),
+            event.model_dump_json(),
+        ),
+    )
 
 
 def _require_query(
