@@ -16,6 +16,9 @@ from app.v2.domain.enterprise_rbac import (
 from app.v2.domain.enterprise_workspace import (
     EnterpriseWorkspaceRole,
 )
+from app.v2.repositories.enterprise_quota_admin_mutations import (
+    EnterpriseQuotaAdminMutationRepository,
+)
 from app.v2.repositories.enterprise_quota_limits import (
     InMemoryEnterpriseQuotaLimitRepository,
 )
@@ -149,12 +152,30 @@ def _service(
     )
     authorization_resolver.resolve.return_value = resolution
 
+    audit_recording = MagicMock(
+        spec=EnterpriseAdminAuditRecordingService,
+    )
+    atomic_mutations = MagicMock(
+        spec=EnterpriseQuotaAdminMutationRepository,
+    )
+
+    def create_limit_with_audit(
+        *,
+        quota_limit: EnterpriseWorkspaceQuotaLimit,
+        audit_event: object,
+    ) -> EnterpriseWorkspaceQuotaLimit:
+        del audit_event
+        return limits.create(quota_limit)
+
+    atomic_mutations.create_limit_with_audit.side_effect = (
+        create_limit_with_audit
+    )
+
     service = EnterpriseQuotaAdminService(
         limits=limits,
         authorization_resolver=authorization_resolver,
-        audit_recording=MagicMock(
-            spec=EnterpriseAdminAuditRecordingService,
-        ),
+        audit_recording=audit_recording,
+        atomic_mutations=atomic_mutations,
     )
 
     return (

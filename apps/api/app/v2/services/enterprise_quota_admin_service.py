@@ -13,6 +13,9 @@ from app.v2.domain.enterprise_quota import (
 from app.v2.domain.enterprise_rbac import (
     EnterprisePermission,
 )
+from app.v2.repositories.enterprise_quota_admin_mutations import (
+    EnterpriseQuotaAdminMutationRepository,
+)
 from app.v2.repositories.enterprise_quota_limits import (
     EnterpriseQuotaLimitRepository,
 )
@@ -60,10 +63,12 @@ class EnterpriseQuotaAdminService:
         limits: EnterpriseQuotaLimitRepository,
         authorization_resolver: EnterpriseAuthorizationResolver,
         audit_recording: EnterpriseAdminAuditRecordingService,
+        atomic_mutations: EnterpriseQuotaAdminMutationRepository,
     ) -> None:
         self._limits = limits
         self._authorization_resolver = authorization_resolver
         self._audit_recording = audit_recording
+        self._atomic_mutations = atomic_mutations
 
     def create_limit(
         self,
@@ -110,7 +115,25 @@ class EnterpriseQuotaAdminService:
             )
 
         try:
-            created = self._limits.create(quota_limit)
+            success_event = self._audit_recording.build_event(
+                EnterpriseAdminAuditRecordInput(
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    action=action,
+                    outcome=(
+                        EnterpriseAdminAuditOutcome.SUCCEEDED
+                    ),
+                    target_type="quota_limit",
+                    target_id=quota_limit.quota_limit_id,
+                )
+            )
+
+            created = (
+                self._atomic_mutations.create_limit_with_audit(
+                    quota_limit=quota_limit,
+                    audit_event=success_event,
+                )
+            )
         except ValueError:
             self._record_audit(
                 workspace_id=workspace_id,
@@ -138,8 +161,6 @@ class EnterpriseQuotaAdminService:
             )
             raise
 
-        # F6C3A deliberately does not record successful creation.
-        # F6C3B owns atomic quota-create + audit persistence.
         return created
 
     def get_limit(

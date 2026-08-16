@@ -52,11 +52,11 @@ class EnterpriseAdminAuditRecordingService:
         )
         self._clock = clock or _utc_now
 
-    def record(
+    def build_event(
         self,
         command: EnterpriseAdminAuditRecordInput,
     ) -> EnterpriseAdminAuditEvent:
-        event = EnterpriseAdminAuditEvent(
+        return EnterpriseAdminAuditEvent(
             audit_event_id=self._event_id_factory(),
             workspace_id=command.workspace_id,
             actor_user_id=command.actor_user_id,
@@ -67,6 +67,12 @@ class EnterpriseAdminAuditRecordingService:
             occurred_at=self._clock(),
             failure_reason=command.failure_reason,
         )
+
+    def record(
+        self,
+        command: EnterpriseAdminAuditRecordInput,
+    ) -> EnterpriseAdminAuditEvent:
+        event = self.build_event(command)
 
         persisted = self._repository.create(event)
 

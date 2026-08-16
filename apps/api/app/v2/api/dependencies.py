@@ -14,6 +14,9 @@ from app.v2.config.persistence import (
 from app.v2.config.voice_audit_auth import (
     VoiceAuditAuthenticitySettings,
 )
+from app.v2.repositories.enterprise_quota_admin_mutations import (
+    build_enterprise_quota_admin_mutation_repository,
+)
 from app.v2.repositories.factory import (
     build_repository_bundle,
     build_unit_of_work,
@@ -174,6 +177,15 @@ class V2Services:
             )
         )
 
+        self.enterprise_quota_admin_mutations = (
+            build_enterprise_quota_admin_mutation_repository(
+                limits=quota_limits,
+                audit=(
+                    self.enterprise_admin_audit.repository
+                ),
+            )
+        )
+
         self.quota_admin = EnterpriseQuotaAdminService(
             limits=quota_limits,
             authorization_resolver=(
@@ -181,6 +193,9 @@ class V2Services:
             ),
             audit_recording=(
                 self.enterprise_admin_audit.recording
+            ),
+            atomic_mutations=(
+                self.enterprise_quota_admin_mutations
             ),
         )
 

@@ -7,6 +7,9 @@ import pytest
 
 from app.v2.api import dependencies as v2_dependencies
 from app.v2.api.dependencies import V2Services
+from app.v2.repositories.enterprise_quota_limits import (
+    InMemoryEnterpriseQuotaLimitRepository,
+)
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
 )
@@ -45,7 +48,7 @@ def _runtime() -> tuple[
     )
 
     runtime = EnterpriseQuotaRuntime(
-        limits=MagicMock(),
+        limits=InMemoryEnterpriseQuotaLimitRepository(),
         runtime_context=runtime_context,
         enforcement=enforcement,
     )

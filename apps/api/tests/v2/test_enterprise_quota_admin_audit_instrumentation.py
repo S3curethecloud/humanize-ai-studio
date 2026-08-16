@@ -20,6 +20,9 @@ from app.v2.domain.enterprise_rbac import (
 from app.v2.domain.enterprise_workspace import (
     EnterpriseWorkspaceRole,
 )
+from app.v2.repositories.enterprise_quota_admin_mutations import (
+    EnterpriseQuotaAdminMutationRepository,
+)
 from app.v2.repositories.enterprise_quota_limits import (
     InMemoryEnterpriseQuotaLimitRepository,
 )
@@ -155,10 +158,27 @@ def _service(
         spec=EnterpriseAdminAuditRecordingService,
     )
 
+    atomic_mutations = MagicMock(
+        spec=EnterpriseQuotaAdminMutationRepository,
+    )
+
+    def create_limit_with_audit(
+        *,
+        quota_limit: EnterpriseWorkspaceQuotaLimit,
+        audit_event: object,
+    ) -> EnterpriseWorkspaceQuotaLimit:
+        del audit_event
+        return limits.create(quota_limit)
+
+    atomic_mutations.create_limit_with_audit.side_effect = (
+        create_limit_with_audit
+    )
+
     service = EnterpriseQuotaAdminService(
         limits=limits,
         authorization_resolver=resolver,
         audit_recording=audit,
+        atomic_mutations=atomic_mutations,
     )
 
     return service, limits, audit
@@ -434,7 +454,7 @@ def test_audit_failure_fails_read_closed() -> None:
         )
 
 
-def test_successful_create_is_reserved_for_f6c3b() -> None:
+def test_successful_create_builds_success_audit_without_direct_record() -> None:
     service, _limits, audit = _service(
         resolution=_resolved(
             permission=EnterprisePermission.QUOTA_MANAGE,
@@ -448,4 +468,18 @@ def test_successful_create_is_reserved_for_f6c3b() -> None:
     )
 
     assert created.quota_limit_id == "limit_requests"
+
+    audit.build_event.assert_called_once_with(
+        EnterpriseAdminAuditRecordInput(
+            workspace_id=WORKSPACE_ID,
+            actor_user_id=ACTOR_USER_ID,
+            action=(
+                EnterpriseAdminAuditAction.QUOTA_LIMIT_CREATE
+            ),
+            outcome=EnterpriseAdminAuditOutcome.SUCCEEDED,
+            target_type="quota_limit",
+            target_id="limit_requests",
+        )
+    )
+
     audit.record.assert_not_called()

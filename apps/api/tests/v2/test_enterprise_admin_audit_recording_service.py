@@ -173,3 +173,31 @@ def test_repository_result_must_match_exact_event() -> None:
         match="different from the event supplied",
     ):
         service.record(_command())
+
+
+def test_build_event_does_not_persist() -> None:
+    repository = (
+        InMemoryEnterpriseAdminAuditRepository()
+    )
+    service = EnterpriseAdminAuditRecordingService(
+        repository=repository,
+        event_id_factory=lambda: "audit_built",
+        clock=lambda: FIXED_TIME,
+    )
+
+    event = service.build_event(_command())
+
+    assert event == EnterpriseAdminAuditEvent(
+        audit_event_id="audit_built",
+        workspace_id="workspace_1",
+        actor_user_id="user_admin",
+        action=(
+            EnterpriseAdminAuditAction.QUOTA_LIMIT_CREATE
+        ),
+        outcome=EnterpriseAdminAuditOutcome.SUCCEEDED,
+        target_type="quota_limit",
+        target_id="limit_requests",
+        occurred_at=FIXED_TIME,
+    )
+
+    assert repository.get("audit_built") is None

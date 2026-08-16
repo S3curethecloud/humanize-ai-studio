@@ -228,3 +228,29 @@ def test_policy_provisioned_before_activation_is_visible_to_runtime(
         )
         == _quota_limit()
     )
+
+
+def test_quota_admin_atomic_mutation_uses_exact_composed_authorities() -> None:
+    services = V2Services(
+        workflow=MagicMock(),
+        persistence_settings=_memory_settings(),
+        enterprise_authorization_runtime=(
+            _authorization_runtime()
+        ),
+        quota_runtime=None,
+    )
+
+    assert (
+        services.quota_admin._atomic_mutations
+        is services.enterprise_quota_admin_mutations
+    )
+
+    assert (
+        services.enterprise_quota_admin_mutations._limits
+        is services.quota_admin._limits
+    )
+
+    assert (
+        services.enterprise_quota_admin_mutations._audit
+        is services.enterprise_admin_audit.repository
+    )
