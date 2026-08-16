@@ -19,6 +19,9 @@ from app.v2.domain.enterprise_workspace import (
 from app.v2.repositories.enterprise_quota_limits import (
     InMemoryEnterpriseQuotaLimitRepository,
 )
+from app.v2.services.enterprise_admin_audit_recording_service import (
+    EnterpriseAdminAuditRecordingService,
+)
 from app.v2.services.enterprise_authorization_resolver import (
     AuthorizationResolutionFailureReason,
     AuthorizationResolutionStatus,
@@ -149,6 +152,9 @@ def _service(
     service = EnterpriseQuotaAdminService(
         limits=limits,
         authorization_resolver=authorization_resolver,
+        audit_recording=MagicMock(
+            spec=EnterpriseAdminAuditRecordingService,
+        ),
     )
 
     return (

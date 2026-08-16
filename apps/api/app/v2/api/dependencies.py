@@ -179,6 +179,9 @@ class V2Services:
             authorization_resolver=(
                 self.enterprise_authorization.authorization_resolver
             ),
+            audit_recording=(
+                self.enterprise_admin_audit.recording
+            ),
         )
 
         unit_of_work = None

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from app.v2.domain.enterprise_admin_audit import (
+    EnterpriseAdminAuditAction,
+    EnterpriseAdminAuditOutcome,
+)
 from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseWorkspaceQuotaLimit,
@@ -11,6 +15,10 @@ from app.v2.domain.enterprise_rbac import (
 )
 from app.v2.repositories.enterprise_quota_limits import (
     EnterpriseQuotaLimitRepository,
+)
+from app.v2.services.enterprise_admin_audit_recording_service import (
+    EnterpriseAdminAuditRecordingService,
+    EnterpriseAdminAuditRecordInput,
 )
 from app.v2.services.enterprise_authorization_resolver import (
     AuthorizationResolutionStatus,
@@ -39,15 +47,23 @@ class EnterpriseQuotaAdministrationError(RuntimeError):
         super().__init__(reason.value)
 
 
+class EnterpriseQuotaAdministrationAuditError(
+    RuntimeError
+):
+    pass
+
+
 class EnterpriseQuotaAdminService:
     def __init__(
         self,
         *,
         limits: EnterpriseQuotaLimitRepository,
         authorization_resolver: EnterpriseAuthorizationResolver,
+        audit_recording: EnterpriseAdminAuditRecordingService,
     ) -> None:
         self._limits = limits
         self._authorization_resolver = authorization_resolver
+        self._audit_recording = audit_recording
 
     def create_limit(
         self,
@@ -56,18 +72,75 @@ class EnterpriseQuotaAdminService:
         workspace_id: str,
         quota_limit: EnterpriseWorkspaceQuotaLimit,
     ) -> EnterpriseWorkspaceQuotaLimit:
-        self._require_permission(
-            actor_user_id=actor_user_id,
-            workspace_id=workspace_id,
-            permission=EnterprisePermission.QUOTA_MANAGE,
-        )
+        action = EnterpriseAdminAuditAction.QUOTA_LIMIT_CREATE
+
+        try:
+            self._require_permission(
+                actor_user_id=actor_user_id,
+                workspace_id=workspace_id,
+                permission=EnterprisePermission.QUOTA_MANAGE,
+            )
+        except EnterpriseQuotaAdministrationError as exc:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.DENIED,
+                target_type="quota_limit",
+                target_id=quota_limit.quota_limit_id,
+                failure_reason=exc.reason.value,
+            )
+            raise
 
         if quota_limit.workspace_id != workspace_id:
-            raise EnterpriseQuotaAdministrationError(
+            reason = (
                 QuotaAdministrationFailureReason.LIMIT_SCOPE_MISMATCH
             )
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.FAILED,
+                target_type="quota_limit",
+                target_id=quota_limit.quota_limit_id,
+                failure_reason=reason.value,
+            )
+            raise EnterpriseQuotaAdministrationError(
+                reason
+            )
 
-        return self._limits.create(quota_limit)
+        try:
+            created = self._limits.create(quota_limit)
+        except ValueError:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.FAILED,
+                target_type="quota_limit",
+                target_id=quota_limit.quota_limit_id,
+                failure_reason=(
+                    "quota_limit_persistence_rejected"
+                ),
+            )
+            raise
+        except Exception:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.FAILED,
+                target_type="quota_limit",
+                target_id=quota_limit.quota_limit_id,
+                failure_reason=(
+                    "quota_limit_persistence_failed"
+                ),
+            )
+            raise
+
+        # F6C3A deliberately does not record successful creation.
+        # F6C3B owns atomic quota-create + audit persistence.
+        return created
 
     def get_limit(
         self,
@@ -76,23 +149,70 @@ class EnterpriseQuotaAdminService:
         workspace_id: str,
         quota_limit_id: str,
     ) -> EnterpriseWorkspaceQuotaLimit:
-        self._require_permission(
-            actor_user_id=actor_user_id,
-            workspace_id=workspace_id,
-            permission=EnterprisePermission.QUOTA_READ,
-        )
+        action = EnterpriseAdminAuditAction.QUOTA_LIMIT_GET
 
-        quota_limit = self._limits.get(
-            quota_limit_id,
-        )
+        try:
+            self._require_permission(
+                actor_user_id=actor_user_id,
+                workspace_id=workspace_id,
+                permission=EnterprisePermission.QUOTA_READ,
+            )
+        except EnterpriseQuotaAdministrationError as exc:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.DENIED,
+                target_type="quota_limit",
+                target_id=quota_limit_id,
+                failure_reason=exc.reason.value,
+            )
+            raise
+
+        try:
+            quota_limit = self._limits.get(
+                quota_limit_id,
+            )
+        except Exception:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.FAILED,
+                target_type="quota_limit",
+                target_id=quota_limit_id,
+                failure_reason="quota_limit_query_failed",
+            )
+            raise
 
         if (
             quota_limit is None
             or quota_limit.workspace_id != workspace_id
         ):
-            raise EnterpriseQuotaAdministrationError(
+            reason = (
                 QuotaAdministrationFailureReason.LIMIT_NOT_FOUND
             )
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.FAILED,
+                target_type="quota_limit",
+                target_id=quota_limit_id,
+                failure_reason=reason.value,
+            )
+            raise EnterpriseQuotaAdministrationError(
+                reason
+            )
+
+        self._record_audit(
+            workspace_id=workspace_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            outcome=EnterpriseAdminAuditOutcome.SUCCEEDED,
+            target_type="quota_limit",
+            target_id=quota_limit_id,
+        )
 
         return quota_limit
 
@@ -107,17 +227,67 @@ class EnterpriseQuotaAdminService:
         EnterpriseWorkspaceQuotaLimit,
         ...,
     ]:
-        self._require_permission(
-            actor_user_id=actor_user_id,
+        action = EnterpriseAdminAuditAction.QUOTA_LIMIT_LIST
+
+        try:
+            self._require_permission(
+                actor_user_id=actor_user_id,
+                workspace_id=workspace_id,
+                permission=EnterprisePermission.QUOTA_READ,
+            )
+        except EnterpriseQuotaAdministrationError as exc:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.DENIED,
+                target_type="quota_dimension",
+                target_id=dimension.value,
+                failure_reason=exc.reason.value,
+            )
+            raise
+
+        try:
+            quota_limits = (
+                self._limits.list_for_workspace_dimension(
+                    workspace_id=workspace_id,
+                    dimension=dimension,
+                    limit=limit,
+                )
+            )
+        except ValueError:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.FAILED,
+                target_type="quota_dimension",
+                target_id=dimension.value,
+                failure_reason="quota_limit_query_rejected",
+            )
+            raise
+        except Exception:
+            self._record_audit(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                action=action,
+                outcome=EnterpriseAdminAuditOutcome.FAILED,
+                target_type="quota_dimension",
+                target_id=dimension.value,
+                failure_reason="quota_limit_query_failed",
+            )
+            raise
+
+        self._record_audit(
             workspace_id=workspace_id,
-            permission=EnterprisePermission.QUOTA_READ,
+            actor_user_id=actor_user_id,
+            action=action,
+            outcome=EnterpriseAdminAuditOutcome.SUCCEEDED,
+            target_type="quota_dimension",
+            target_id=dimension.value,
         )
 
-        return self._limits.list_for_workspace_dimension(
-            workspace_id=workspace_id,
-            dimension=dimension,
-            limit=limit,
-        )
+        return quota_limits
 
     def _require_permission(
         self,
@@ -150,3 +320,32 @@ class EnterpriseQuotaAdminService:
             raise EnterpriseQuotaAdministrationError(
                 QuotaAdministrationFailureReason.AUTHORIZATION_DENIED
             )
+
+    def _record_audit(
+        self,
+        *,
+        workspace_id: str,
+        actor_user_id: str,
+        action: EnterpriseAdminAuditAction,
+        outcome: EnterpriseAdminAuditOutcome,
+        target_type: str,
+        target_id: str,
+        failure_reason: str | None = None,
+    ) -> None:
+        try:
+            self._audit_recording.record(
+                EnterpriseAdminAuditRecordInput(
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    action=action,
+                    outcome=outcome,
+                    target_type=target_type,
+                    target_id=target_id,
+                    failure_reason=failure_reason,
+                )
+            )
+        except Exception as exc:
+            raise EnterpriseQuotaAdministrationAuditError(
+                "enterprise quota administration "
+                "audit persistence failed"
+            ) from exc
