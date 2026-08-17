@@ -53,6 +53,22 @@ class ProviderRoutingExecutionResult:
     attempts: tuple[ProviderExecutionAttempt, ...]
 
 
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class ProviderRoutingExecutionFailureResult:
+    error: RewriteProviderError
+    initial_target_id: str
+    attempts: tuple[ProviderExecutionAttempt, ...]
+
+
+ProviderRoutingExecutionOutcome = (
+    ProviderRoutingExecutionResult
+    | ProviderRoutingExecutionFailureResult
+)
+
+
 class ProviderRoutingExecutionResolutionError(RuntimeError):
     pass
 
@@ -74,6 +90,27 @@ class ProviderRoutingExecutionService:
         decision: RoutingDecision,
         request: RewriteRequest,
     ) -> ProviderRoutingExecutionResult:
+        outcome = self.execute_outcome(
+            policy=policy,
+            decision=decision,
+            request=request,
+        )
+
+        if isinstance(
+            outcome,
+            ProviderRoutingExecutionFailureResult,
+        ):
+            raise outcome.error
+
+        return outcome
+
+    def execute_outcome(
+        self,
+        *,
+        policy: RoutingPolicy,
+        decision: RoutingDecision,
+        request: RewriteRequest,
+    ) -> ProviderRoutingExecutionOutcome:
         selected_index = self._validated_selected_index(
             policy=policy,
             decision=decision,
@@ -135,7 +172,11 @@ class ProviderRoutingExecutionService:
                         failure_category=failure_category,
                     )
                 ):
-                    raise
+                    return ProviderRoutingExecutionFailureResult(
+                        error=exc,
+                        initial_target_id=execution_target_ids[0],
+                        attempts=tuple(attempts),
+                    )
 
                 continue
 

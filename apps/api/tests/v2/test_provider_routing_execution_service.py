@@ -44,7 +44,9 @@ from app.v2.services.provider_execution_adapter import (
 )
 from app.v2.services.provider_routing_execution_service import (
     ProviderExecutionAttemptOutcome,
+    ProviderRoutingExecutionFailureResult,
     ProviderRoutingExecutionResolutionError,
+    ProviderRoutingExecutionResult,
     ProviderRoutingExecutionService,
 )
 
@@ -758,3 +760,245 @@ def test_catalog_identity_mismatch_fails_closed() -> None:
         )
 
     executor.execute.assert_not_called()
+
+
+def test_execute_outcome_returns_success_result() -> None:
+    executor = _executor()
+    executor.execute.return_value = _result(
+        "primary"
+    )
+
+    service = ProviderRoutingExecutionService(
+        catalog=_catalog("primary"),
+        executor=executor,
+    )
+
+    outcome = service.execute_outcome(
+        policy=_policy("primary"),
+        decision=_decision(
+            candidates=(
+                _eligible("primary"),
+            ),
+            selected_target_id="primary",
+        ),
+        request=_request(),
+    )
+
+    assert isinstance(
+        outcome,
+        ProviderRoutingExecutionResult,
+    )
+    assert outcome.executed_target_id == "primary"
+    assert outcome.initial_target_id == "primary"
+    assert outcome.execution_fallback_used is False
+    assert len(outcome.attempts) == 1
+    assert (
+        outcome.attempts[0].outcome
+        is ProviderExecutionAttemptOutcome.SUCCEEDED
+    )
+
+
+def test_execute_outcome_preserves_terminal_provider_failure_attempts(
+) -> None:
+    executor = _executor()
+
+    first = RewriteProviderTransportError(
+        "first"
+    )
+    final = RewriteProviderTransportError(
+        "final"
+    )
+
+    executor.execute.side_effect = [
+        first,
+        final,
+    ]
+
+    service = ProviderRoutingExecutionService(
+        catalog=_catalog(
+            "primary",
+            "fallback",
+        ),
+        executor=executor,
+    )
+
+    outcome = service.execute_outcome(
+        policy=_policy(
+            "primary",
+            "fallback",
+        ),
+        decision=_decision(
+            candidates=(
+                _eligible("primary"),
+                _eligible("fallback"),
+            ),
+            selected_target_id="primary",
+        ),
+        request=_request(),
+    )
+
+    assert isinstance(
+        outcome,
+        ProviderRoutingExecutionFailureResult,
+    )
+    assert outcome.error is final
+    assert outcome.initial_target_id == "primary"
+
+    assert tuple(
+        attempt.target_id
+        for attempt in outcome.attempts
+    ) == (
+        "primary",
+        "fallback",
+    )
+
+    assert all(
+        attempt.outcome
+        is ProviderExecutionAttemptOutcome.PROVIDER_ERROR
+        for attempt in outcome.attempts
+    )
+
+    assert tuple(
+        attempt.failure_category
+        for attempt in outcome.attempts
+    ) == (
+        RoutingFailureCategory.TRANSPORT,
+        RoutingFailureCategory.TRANSPORT,
+    )
+
+
+def test_execute_outcome_preserves_forbidden_failure_attempt(
+) -> None:
+    executor = _executor()
+
+    error = RewriteProviderResponseError(
+        "response"
+    )
+    executor.execute.side_effect = error
+
+    service = ProviderRoutingExecutionService(
+        catalog=_catalog(
+            "primary",
+            "fallback",
+        ),
+        executor=executor,
+    )
+
+    outcome = service.execute_outcome(
+        policy=_policy(
+            "primary",
+            "fallback",
+            categories=(
+                RoutingFailureCategory.TRANSPORT,
+            ),
+        ),
+        decision=_decision(
+            candidates=(
+                _eligible("primary"),
+                _eligible("fallback"),
+            ),
+            selected_target_id="primary",
+        ),
+        request=_request(),
+    )
+
+    assert isinstance(
+        outcome,
+        ProviderRoutingExecutionFailureResult,
+    )
+    assert outcome.error is error
+    assert outcome.initial_target_id == "primary"
+    assert len(outcome.attempts) == 1
+    assert outcome.attempts[0].target_id == "primary"
+    assert (
+        outcome.attempts[0].failure_category
+        is RoutingFailureCategory.RESPONSE
+    )
+    assert executor.execute.call_count == 1
+
+
+def test_execute_still_reraises_exact_failure_from_outcome_path(
+) -> None:
+    executor = _executor()
+
+    error = RewriteProviderTransportError(
+        "terminal"
+    )
+    executor.execute.side_effect = error
+
+    service = ProviderRoutingExecutionService(
+        catalog=_catalog("primary"),
+        executor=executor,
+    )
+
+    with pytest.raises(
+        RewriteProviderTransportError,
+    ) as exc_info:
+        service.execute(
+            policy=_policy("primary"),
+            decision=_decision(
+                candidates=(
+                    _eligible("primary"),
+                ),
+                selected_target_id="primary",
+            ),
+            request=_request(),
+        )
+
+    assert exc_info.value is error
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ProviderExecutionBindingError(
+            "binding"
+        ),
+        ProviderExecutionIntegrityError(
+            "integrity"
+        ),
+        RuntimeError(
+            "unexpected"
+        ),
+    ],
+)
+def test_execute_outcome_does_not_capture_non_provider_failure(
+    error: RuntimeError,
+) -> None:
+    executor = _executor()
+    executor.execute.side_effect = error
+
+    service = ProviderRoutingExecutionService(
+        catalog=_catalog(
+            "primary",
+            "fallback",
+        ),
+        executor=executor,
+    )
+
+    with pytest.raises(
+        type(error),
+    ) as exc_info:
+        service.execute_outcome(
+            policy=_policy(
+                "primary",
+                "fallback",
+                categories=(
+                    RoutingFailureCategory.CONFIGURATION,
+                    RoutingFailureCategory.TRANSPORT,
+                    RoutingFailureCategory.RESPONSE,
+                    RoutingFailureCategory.PROVIDER,
+                ),
+            ),
+            decision=_decision(
+                candidates=(
+                    _eligible("primary"),
+                    _eligible("fallback"),
+                ),
+                selected_target_id="primary",
+            ),
+            request=_request(),
+        )
+
+    assert exc_info.value is error
+    assert executor.execute.call_count == 1
