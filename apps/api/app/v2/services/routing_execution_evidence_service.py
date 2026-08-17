@@ -21,6 +21,10 @@ from app.v2.services.provider_routing_execution_service import (
     ProviderRoutingExecutionOutcome,
     ProviderRoutingExecutionResult,
 )
+from app.v2.services.routing_eval_evidence_telemetry import (
+    RoutingEvalEvidenceTelemetry,
+    record_routing_telemetry_best_effort,
+)
 
 
 class RoutingExecutionEvidenceIntegrityError(RuntimeError):
@@ -32,8 +36,10 @@ class RoutingExecutionEvidenceService:
         self,
         *,
         repository: RoutingEvidenceRepository,
+        telemetry: RoutingEvalEvidenceTelemetry | None = None,
     ) -> None:
         self._repository = repository
+        self._telemetry = telemetry
 
     def record(
         self,
@@ -89,7 +95,14 @@ class RoutingExecutionEvidenceService:
                 observed_at=observed_at,
             )
 
-        return self._repository.create(record)
+        persisted = self._repository.create(record)
+
+        record_routing_telemetry_best_effort(
+            telemetry=self._telemetry,
+            record=persisted,
+        )
+
+        return persisted
 
     @staticmethod
     def _require_outcome_identity(

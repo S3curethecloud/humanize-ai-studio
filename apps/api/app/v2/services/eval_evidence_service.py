@@ -12,6 +12,10 @@ from app.v2.domain.routing_eval_evidence import (
 from app.v2.repositories.routing_eval_evidence import (
     EvaluationEvidenceRepository,
 )
+from app.v2.services.routing_eval_evidence_telemetry import (
+    RoutingEvalEvidenceTelemetry,
+    record_evaluation_telemetry_best_effort,
+)
 
 
 class EvaluationEvidenceService:
@@ -19,8 +23,10 @@ class EvaluationEvidenceService:
         self,
         *,
         repository: EvaluationEvidenceRepository,
+        telemetry: RoutingEvalEvidenceTelemetry | None = None,
     ) -> None:
         self._repository = repository
+        self._telemetry = telemetry
 
     def record_run(
         self,
@@ -35,7 +41,14 @@ class EvaluationEvidenceService:
             observed_at=observed_at,
         )
 
-        return self._repository.create(record)
+        persisted = self._repository.create(record)
+
+        record_evaluation_telemetry_best_effort(
+            telemetry=self._telemetry,
+            record=persisted,
+        )
+
+        return persisted
 
     def record_gate(
         self,
@@ -52,4 +65,11 @@ class EvaluationEvidenceService:
             observed_at=observed_at,
         )
 
-        return self._repository.create(record)
+        persisted = self._repository.create(record)
+
+        record_evaluation_telemetry_best_effort(
+            telemetry=self._telemetry,
+            record=persisted,
+        )
+
+        return persisted

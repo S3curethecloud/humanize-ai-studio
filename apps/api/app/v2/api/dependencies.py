@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.core.settings import Settings
+from app.observability.metrics import metrics_registry
 from app.providers.registry import (
     build_rewrite_provider,
 )
@@ -179,12 +180,14 @@ class V2Services:
                 repository=(
                     self.routing_eval_evidence_repositories.routing
                 ),
+                telemetry=metrics_registry,
             )
         )
         self.evaluation_evidence = EvaluationEvidenceService(
             repository=(
                 self.routing_eval_evidence_repositories.evaluation
             ),
+            telemetry=metrics_registry,
         )
         self.routing_evidence_query = (
             RoutingEvidenceQueryService(
