@@ -4,12 +4,18 @@ from datetime import datetime
 
 from fastapi import (
     APIRouter,
+    Header,
     HTTPException,
     Query,
     status,
 )
 
 from app.v2.api.dependencies import services
+from app.v2.api.evidence_access import (
+    EvidenceAccessDeniedError,
+    EvidenceExposureDisabledError,
+    require_evidence_access,
+)
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
@@ -831,13 +837,39 @@ def analyze_voice_profile(
         evidence=result.evidence,
     )
 
+def _require_platform_evidence_access(
+    authorization: str | None,
+) -> None:
+    try:
+        require_evidence_access(
+            authorization=authorization,
+        )
+    except EvidenceExposureDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        ) from exc
+    except EvidenceAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
 @router.get(
     "/evidence/routing/{evidence_id}",
     response_model=RoutingEvidenceResponse,
 )
 def get_routing_evidence(
     evidence_id: str,
+    authorization: str | None = Header(
+        default=None,
+    ),
 ) -> RoutingEvidenceResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
     try:
         evidence = services.routing_evidence_query.get(
             evidence_id=evidence_id,
@@ -858,6 +890,9 @@ def get_routing_evidence(
     response_model=RoutingEvidenceListResponse,
 )
 def list_routing_evidence(
+    authorization: str | None = Header(
+        default=None,
+    ),
     policy_id: str | None = Query(
         default=None,
         min_length=1,
@@ -878,6 +913,10 @@ def list_routing_evidence(
         le=10000,
     ),
 ) -> RoutingEvidenceListResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
     records = services.routing_evidence_query.list_records(
         policy_id=policy_id,
         decision_status=decision_status,
@@ -897,7 +936,14 @@ def list_routing_evidence(
 )
 def get_evaluation_evidence(
     evidence_id: str,
+    authorization: str | None = Header(
+        default=None,
+    ),
 ) -> EvaluationEvidenceResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
     try:
         evidence = services.evaluation_evidence_query.get(
             evidence_id=evidence_id,
@@ -918,6 +964,9 @@ def get_evaluation_evidence(
     response_model=EvaluationEvidenceListResponse,
 )
 def list_evaluation_evidence(
+    authorization: str | None = Header(
+        default=None,
+    ),
     run_id: str | None = Query(
         default=None,
         min_length=1,
@@ -950,6 +999,10 @@ def list_evaluation_evidence(
         le=10000,
     ),
 ) -> EvaluationEvidenceListResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
     records = (
         services.evaluation_evidence_query.list_records(
             run_id=run_id,

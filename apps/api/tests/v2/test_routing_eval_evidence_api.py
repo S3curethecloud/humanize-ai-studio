@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,9 @@ from fastapi.testclient import TestClient
 import app.v2.api.routes as v2_routes
 from app.main import app
 from app.v2.api.dependencies import V2Services
+from app.v2.api.evidence_access import (
+    EVIDENCE_BEARER_TOKEN_ENV,
+)
 from app.v2.domain.eval_ops import (
     EvaluationDatasetIdentity,
     EvaluationMetric,
@@ -33,6 +37,27 @@ client = TestClient(app)
 
 def setup_function() -> None:
     v2_routes.services = V2Services()
+    os.environ[
+        EVIDENCE_BEARER_TOKEN_ENV
+    ] = "test-evidence-token"
+    client.headers.update(
+        {
+            "Authorization": (
+                "Bearer test-evidence-token"
+            )
+        }
+    )
+
+
+def teardown_function() -> None:
+    os.environ.pop(
+        EVIDENCE_BEARER_TOKEN_ENV,
+        None,
+    )
+    client.headers.pop(
+        "Authorization",
+        None,
+    )
 
 
 def _observed_at(
@@ -447,3 +472,31 @@ def test_v2_services_recorders_and_queries_share_repositories() -> None:
     )
 
     assert queried.evidence_id == "shared-evidence"
+
+def test_evidence_api_disabled_without_operator_token() -> None:
+    os.environ.pop(
+        EVIDENCE_BEARER_TOKEN_ENV,
+        None,
+    )
+
+    response = client.get(
+        "/api/v2/evidence/routing/missing"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Not Found"
+
+
+def test_evidence_api_rejects_invalid_operator_token() -> None:
+    response = client.get(
+        "/api/v2/evidence/evaluation",
+        headers={
+            "Authorization": "Bearer wrong-token",
+        },
+    )
+
+    assert response.status_code == 403
+    assert (
+        response.json()["detail"]
+        == "evidence authorization failed"
+    )
