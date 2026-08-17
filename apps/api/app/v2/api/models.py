@@ -46,6 +46,10 @@ from app.v2.domain.rewrite_candidates import (
     RewriteCandidateDiffSet,
     RewriteCandidateSet,
 )
+from app.v2.domain.routing_eval_evidence import (
+    EvaluationEvidenceRecord,
+    RoutingEvidenceRecord,
+)
 from app.v2.services.claim_lock_extractor import (
     ExplicitProtectedTerm,
 )
@@ -325,3 +329,24 @@ class WorkspaceLongDocumentRewriteResponse(BaseModel):
     reconstruction: DocumentReconstruction
     audit: LongDocumentAuditRecord
     claim_lock: ClaimLockRewriteEvidence | None = None
+
+class RoutingEvidenceResponse(BaseModel):
+    evidence: RoutingEvidenceRecord
+
+
+class RoutingEvidenceListResponse(BaseModel):
+    records: tuple[
+        RoutingEvidenceRecord,
+        ...,
+    ]
+
+
+class EvaluationEvidenceResponse(BaseModel):
+    evidence: EvaluationEvidenceRecord
+
+
+class EvaluationEvidenceListResponse(BaseModel):
+    records: tuple[
+        EvaluationEvidenceRecord,
+        ...,
+    ]

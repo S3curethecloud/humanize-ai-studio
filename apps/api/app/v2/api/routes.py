@@ -17,9 +17,18 @@ from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseWorkspaceQuotaLimit,
 )
+from app.v2.domain.eval_ops import (
+    EvaluationRunOutcome,
+)
 from app.v2.domain.models import VoiceProfileStatus
 from app.v2.domain.observability import (
     WorkspaceAnalyticsSnapshot,
+)
+from app.v2.domain.provider_routing import (
+    RoutingDecisionStatus,
+)
+from app.v2.domain.routing_eval_evidence import (
+    RoutingEvidenceExecutionOutcome,
 )
 from app.v2.services.candidate_control_enforcement import (
     CandidateClaimLockViolationError,
@@ -50,6 +59,10 @@ from app.v2.services.long_document_control_evaluator import (
 from app.v2.services.multi_candidate_rewrite_service import (
     MultiCandidateVoiceUnavailableError,
     NoEligibleCandidateError,
+)
+from app.v2.services.routing_eval_evidence_query_service import (
+    EvaluationEvidenceNotFoundError,
+    RoutingEvidenceNotFoundError,
 )
 from app.v2.services.section_rewrite_orchestrator import (
     SectionRewriteExecutionError,
@@ -84,7 +97,11 @@ from app.v2.api.models import (
     CreateWorkspaceResponse,
     EnterpriseQuotaLimitListResponse,
     EnterpriseQuotaLimitResponse,
+    EvaluationEvidenceListResponse,
+    EvaluationEvidenceResponse,
     MultiCandidateRewriteEvidence,
+    RoutingEvidenceListResponse,
+    RoutingEvidenceResponse,
     UpdateVoiceProfileRequest,
     VoiceProfileAnalysisResponse,
     VoiceProfileListResponse,
@@ -812,4 +829,139 @@ def analyze_voice_profile(
     return VoiceProfileAnalysisResponse(
         profile=result.profile,
         evidence=result.evidence,
+    )
+
+@router.get(
+    "/evidence/routing/{evidence_id}",
+    response_model=RoutingEvidenceResponse,
+)
+def get_routing_evidence(
+    evidence_id: str,
+) -> RoutingEvidenceResponse:
+    try:
+        evidence = services.routing_evidence_query.get(
+            evidence_id=evidence_id,
+        )
+    except RoutingEvidenceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return RoutingEvidenceResponse(
+        evidence=evidence,
+    )
+
+
+@router.get(
+    "/evidence/routing",
+    response_model=RoutingEvidenceListResponse,
+)
+def list_routing_evidence(
+    policy_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    decision_status: RoutingDecisionStatus | None = None,
+    execution_outcome: (
+        RoutingEvidenceExecutionOutcome | None
+    ) = None,
+    executed_target_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=10000,
+    ),
+) -> RoutingEvidenceListResponse:
+    records = services.routing_evidence_query.list_records(
+        policy_id=policy_id,
+        decision_status=decision_status,
+        execution_outcome=execution_outcome,
+        executed_target_id=executed_target_id,
+        limit=limit,
+    )
+
+    return RoutingEvidenceListResponse(
+        records=records,
+    )
+
+
+@router.get(
+    "/evidence/evaluation/{evidence_id}",
+    response_model=EvaluationEvidenceResponse,
+)
+def get_evaluation_evidence(
+    evidence_id: str,
+) -> EvaluationEvidenceResponse:
+    try:
+        evidence = services.evaluation_evidence_query.get(
+            evidence_id=evidence_id,
+        )
+    except EvaluationEvidenceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return EvaluationEvidenceResponse(
+        evidence=evidence,
+    )
+
+
+@router.get(
+    "/evidence/evaluation",
+    response_model=EvaluationEvidenceListResponse,
+)
+def list_evaluation_evidence(
+    run_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    dataset_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    dataset_version: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    target_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    run_outcome: EvaluationRunOutcome | None = None,
+    gate_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=10000,
+    ),
+) -> EvaluationEvidenceListResponse:
+    records = (
+        services.evaluation_evidence_query.list_records(
+            run_id=run_id,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+            target_id=target_id,
+            run_outcome=run_outcome,
+            gate_id=gate_id,
+            limit=limit,
+        )
+    )
+
+    return EvaluationEvidenceListResponse(
+        records=records,
     )

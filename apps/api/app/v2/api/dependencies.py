@@ -75,6 +75,9 @@ from app.v2.services.enterprise_quota_runtime_factory import (
 from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
     EnterpriseSingleRewriteQuotaAdmissionService,
 )
+from app.v2.services.eval_evidence_service import (
+    EvaluationEvidenceService,
+)
 from app.v2.services.long_document_audit_service import (
     LongDocumentAuditService,
 )
@@ -92,6 +95,16 @@ from app.v2.services.observability_recording_service import (
 )
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
+)
+from app.v2.services.routing_eval_evidence_factory import (
+    build_routing_eval_evidence_repositories,
+)
+from app.v2.services.routing_eval_evidence_query_service import (
+    EvaluationEvidenceQueryService,
+    RoutingEvidenceQueryService,
+)
+from app.v2.services.routing_execution_evidence_service import (
+    RoutingExecutionEvidenceService,
 )
 from app.v2.services.section_rewrite_orchestrator import (
     SectionRewriteOrchestrator,
@@ -154,6 +167,39 @@ class V2Services:
         voice_audit_authenticator = resolved_voice_audit_auth.build_authenticator()
 
         repositories = build_repository_bundle(resolved_persistence)
+
+        self.routing_eval_evidence_repositories = (
+            build_routing_eval_evidence_repositories(
+                resolved_persistence,
+            )
+        )
+
+        self.routing_execution_evidence = (
+            RoutingExecutionEvidenceService(
+                repository=(
+                    self.routing_eval_evidence_repositories.routing
+                ),
+            )
+        )
+        self.evaluation_evidence = EvaluationEvidenceService(
+            repository=(
+                self.routing_eval_evidence_repositories.evaluation
+            ),
+        )
+        self.routing_evidence_query = (
+            RoutingEvidenceQueryService(
+                repository=(
+                    self.routing_eval_evidence_repositories.routing
+                ),
+            )
+        )
+        self.evaluation_evidence_query = (
+            EvaluationEvidenceQueryService(
+                repository=(
+                    self.routing_eval_evidence_repositories.evaluation
+                ),
+            )
+        )
 
         self.enterprise_admin_audit = (
             enterprise_admin_audit_runtime
