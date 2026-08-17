@@ -8,6 +8,9 @@ from app.providers.cloudflare import (
 from app.providers.deterministic import (
     DeterministicRewriteProvider,
 )
+from app.providers.openai_responses import (
+    OpenAIResponsesProvider,
+)
 from app.v2.domain.provider_routing import (
     ProviderModelTarget,
 )
@@ -21,6 +24,7 @@ from app.v2.services.provider_execution_adapter import (
 DETERMINISTIC_PROVIDER_ID = "deterministic"
 DETERMINISTIC_MODEL_ID = "rules-v1"
 CLOUDFLARE_PROVIDER_ID = "cloudflare-workers-ai"
+OPENAI_PROVIDER_ID = "openai"
 
 
 class ProviderExecutionCompositionError(RuntimeError):
@@ -94,6 +98,12 @@ def _build_target_provider(
             target=target,
         )
 
+    if provider_id == OPENAI_PROVIDER_ID:
+        return _build_openai_provider(
+            settings=settings,
+            target=target,
+        )
+
     raise UnsupportedProviderTargetError(
         "unsupported provider catalog target provider: "
         f"{provider_id}"
@@ -143,4 +153,26 @@ def _build_cloudflare_provider(
         timeout_seconds=(
             settings.cloudflare_timeout_seconds
         ),
+    )
+
+def _build_openai_provider(
+    *,
+    settings: Settings,
+    target: ProviderModelTarget,
+) -> RewriteProvider:
+    if settings.openai_api_key is None:
+        raise ProviderTargetConfigurationError(
+            "OpenAI provider target requires OPENAI_API_KEY"
+        )
+
+    if not target.model.model_id.strip():
+        raise ProviderTargetConfigurationError(
+            "OpenAI provider target requires "
+            "a non-empty model identity"
+        )
+
+    return OpenAIResponsesProvider(
+        api_key=settings.openai_api_key,
+        model_name=target.model.model_id,
+        timeout_seconds=settings.openai_timeout_seconds,
     )

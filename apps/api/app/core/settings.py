@@ -18,6 +18,8 @@ class Settings:
     cloudflare_model: str
     cloudflare_timeout_seconds: float
     cloudflare_fallback_enabled: bool
+    openai_api_key: str | None = None
+    openai_timeout_seconds: float = 30.0
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -49,6 +51,13 @@ class Settings:
             cloudflare_fallback_enabled=_boolean_environment_value(
                 "CLOUDFLARE_AI_FALLBACK_ENABLED",
                 default=True,
+            ),
+            openai_api_key=_optional_environment_value(
+                "OPENAI_API_KEY"
+            ),
+            openai_timeout_seconds=_positive_float_environment_value(
+                "OPENAI_TIMEOUT_SECONDS",
+                default=30.0,
             ),
         )
 
