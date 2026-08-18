@@ -12,6 +12,9 @@ from app.v2.config.persistence import (
     PersistenceBackend,
     V2PersistenceSettings,
 )
+from app.v2.config.provider_targets import (
+    ProviderTargetDeclarationSettings,
+)
 from app.v2.config.voice_audit_auth import (
     VoiceAuditAuthenticitySettings,
 )
@@ -94,6 +97,15 @@ from app.v2.services.multi_candidate_rewrite_service import (
 from app.v2.services.observability_recording_service import (
     ObservabilityRecordingService,
 )
+from app.v2.services.provider_catalog_factory import (
+    build_provider_catalog_repository,
+)
+from app.v2.services.provider_catalog_provisioning_service import (
+    ProviderCatalogProvisioningService,
+)
+from app.v2.services.provider_routing_runtime_factory import (
+    build_provider_routing_runtime,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
 )
@@ -103,9 +115,6 @@ from app.v2.services.routing_eval_evidence_factory import (
 from app.v2.services.routing_eval_evidence_query_service import (
     EvaluationEvidenceQueryService,
     RoutingEvidenceQueryService,
-)
-from app.v2.services.routing_execution_evidence_service import (
-    RoutingExecutionEvidenceService,
 )
 from app.v2.services.section_rewrite_orchestrator import (
     SectionRewriteOrchestrator,
@@ -152,6 +161,10 @@ class V2Services:
         workflow: RewriteWorkflow | None = None,
         voice_aware_provider: (VoiceAwareRewriteProvider | None) = None,
         persistence_settings: (V2PersistenceSettings | None) = None,
+        provider_settings: Settings | None = None,
+        provider_target_settings: (
+            ProviderTargetDeclarationSettings | None
+        ) = None,
         voice_audit_auth_settings: (VoiceAuditAuthenticitySettings | None) = None,
         quota_runtime: EnterpriseQuotaRuntime | None = None,
         enterprise_authorization_runtime: (
@@ -162,6 +175,13 @@ class V2Services:
         ) = None,
     ) -> None:
         resolved_persistence = persistence_settings or V2PersistenceSettings.from_environment()
+        resolved_provider_settings = (
+            provider_settings or Settings.from_environment()
+        )
+        resolved_provider_targets = (
+            provider_target_settings
+            or ProviderTargetDeclarationSettings.from_environment()
+        )
         resolved_voice_audit_auth = (
             voice_audit_auth_settings or VoiceAuditAuthenticitySettings.from_environment()
         )
@@ -175,14 +195,41 @@ class V2Services:
             )
         )
 
-        self.routing_execution_evidence = (
-            RoutingExecutionEvidenceService(
-                repository=(
+        self.provider_target_declarations = (
+            resolved_provider_targets
+        )
+        self.provider_catalog = (
+            build_provider_catalog_repository(
+                resolved_persistence,
+            )
+        )
+        self.provider_catalog_provisioning = (
+            ProviderCatalogProvisioningService(
+                catalog=self.provider_catalog,
+            )
+        )
+        self.provider_catalog_provisioning_result = (
+            self.provider_catalog_provisioning.provision(
+                targets=resolved_provider_targets.targets,
+            )
+        )
+        self.provider_routing = (
+            build_provider_routing_runtime(
+                settings=resolved_provider_settings,
+                catalog=self.provider_catalog,
+                evidence=(
                     self.routing_eval_evidence_repositories.routing
                 ),
                 telemetry=metrics_registry,
             )
         )
+        self.routing_execution_evidence = (
+            self.provider_routing.execution_evidence
+        )
+        self.routing_decision_evidence = (
+            self.provider_routing.decision_evidence
+        )
+
         self.evaluation_evidence = EvaluationEvidenceService(
             repository=(
                 self.routing_eval_evidence_repositories.evaluation
@@ -280,8 +327,9 @@ class V2Services:
 
         if resolved_workflow is None:
             if resolved_voice_provider is None:
-                settings = Settings.from_environment()
-                provider = build_rewrite_provider(settings)
+                provider = build_rewrite_provider(
+                    resolved_provider_settings
+                )
                 resolved_voice_provider = VoiceAwareRewriteProvider(
                     provider=provider,
                 )
