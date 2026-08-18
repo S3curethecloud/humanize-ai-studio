@@ -8,14 +8,75 @@ import {
   routeHref,
   type AppRoute
 } from "../app/navigation";
+import {
+  type EnterpriseAccessContextState
+} from "../app/useEnterpriseAccessContext";
 
 interface EnterpriseShellProps {
   activeRoute: AppRoute;
+  accessContext: EnterpriseAccessContextState;
   children: ReactNode;
+}
+
+function displayRole(
+  role: string
+): string {
+  return role
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map(
+      (segment) =>
+        segment.charAt(0).toUpperCase() +
+        segment.slice(1)
+    )
+    .join(" ");
+}
+
+function workspaceLabel(
+  state: EnterpriseAccessContextState
+): string {
+  switch (state.status) {
+    case "connected":
+      return (
+        state.context?.workspace.name ??
+        "Unavailable"
+      );
+    case "loading":
+      return "Resolving...";
+    case "denied":
+      return "Access denied";
+    case "invalid":
+      return "Configuration required";
+    case "error":
+      return "Unavailable";
+    case "unconfigured":
+    default:
+      return "Not connected";
+  }
+}
+
+function roleLabel(
+  state: EnterpriseAccessContextState
+): string {
+  if (
+    state.status === "connected" &&
+    state.context !== null
+  ) {
+    return displayRole(
+      state.context.membership.role
+    );
+  }
+
+  if (state.status === "loading") {
+    return "Resolving...";
+  }
+
+  return "Unresolved";
 }
 
 export function EnterpriseShell({
   activeRoute,
+  accessContext,
   children
 }: EnterpriseShellProps) {
   const activeMetadata =
@@ -113,15 +174,26 @@ export function EnterpriseShell({
             <strong>{activeMetadata.label}</strong>
           </div>
 
-          <div className="enterprise-topbar__context">
+          <div
+            className="enterprise-topbar__context"
+            aria-live="polite"
+            title={
+              accessContext.message ??
+              undefined
+            }
+          >
             <div className="enterprise-context-card">
               <span>Workspace context</span>
-              <strong>Not connected</strong>
+              <strong>
+                {workspaceLabel(accessContext)}
+              </strong>
             </div>
 
             <div className="enterprise-context-card">
-              <span>Session role</span>
-              <strong>Unresolved</strong>
+              <span>Access role</span>
+              <strong>
+                {roleLabel(accessContext)}
+              </strong>
             </div>
           </div>
         </header>

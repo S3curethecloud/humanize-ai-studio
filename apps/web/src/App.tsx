@@ -10,6 +10,9 @@ import {
   type AppRoute
 } from "./app/navigation";
 import {
+  useEnterpriseAccessContext
+} from "./app/useEnterpriseAccessContext";
+import {
   EnterpriseShell
 } from "./layout/EnterpriseShell";
 import DashboardPage from "./pages/DashboardPage";
@@ -25,6 +28,9 @@ function resolveRoute(): AppRoute {
 export default function App() {
   const [activeRoute, setActiveRoute] =
     useState<AppRoute>(resolveRoute);
+
+  const accessContext =
+    useEnterpriseAccessContext();
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -82,6 +88,7 @@ export default function App() {
   return (
     <EnterpriseShell
       activeRoute={activeRoute}
+      accessContext={accessContext}
     >
       {page}
     </EnterpriseShell>
