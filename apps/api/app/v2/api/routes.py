@@ -1,17 +1,41 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import (
     APIRouter,
+    Header,
     HTTPException,
     Query,
     status,
 )
 
 from app.v2.api.dependencies import services
+from app.v2.api.evidence_access import (
+    EvidenceAccessDeniedError,
+    EvidenceExposureDisabledError,
+    require_evidence_access,
+)
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_quota import (
+    EnterpriseQuotaDimension,
+    EnterpriseWorkspaceQuotaLimit,
+)
+from app.v2.domain.eval_ops import (
+    EvaluationRunOutcome,
+)
 from app.v2.domain.models import VoiceProfileStatus
+from app.v2.domain.observability import (
+    WorkspaceAnalyticsSnapshot,
+)
+from app.v2.domain.provider_routing import (
+    RoutingDecisionStatus,
+)
+from app.v2.domain.routing_eval_evidence import (
+    RoutingEvidenceExecutionOutcome,
+)
 from app.v2.services.candidate_control_enforcement import (
     CandidateClaimLockViolationError,
 )
@@ -24,6 +48,13 @@ from app.v2.services.claim_lock_validator import (
 from app.v2.services.document_reconstructor import (
     DocumentReconstructionIntegrityError,
 )
+from app.v2.services.enterprise_quota_admin_service import (
+    EnterpriseQuotaAdministrationError,
+    QuotaAdministrationFailureReason,
+)
+from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
+    EnterpriseQuotaAdmissionDeniedError,
+)
 from app.v2.services.long_document_audit_service import (
     LongDocumentAuditIntegrityError,
 )
@@ -35,6 +66,10 @@ from app.v2.services.multi_candidate_rewrite_service import (
     MultiCandidateVoiceUnavailableError,
     NoEligibleCandidateError,
 )
+from app.v2.services.routing_eval_evidence_query_service import (
+    EvaluationEvidenceNotFoundError,
+    RoutingEvidenceNotFoundError,
+)
 from app.v2.services.section_rewrite_orchestrator import (
     SectionRewriteExecutionError,
 )
@@ -44,6 +79,9 @@ from app.v2.services.voice_profile_service import (
 from app.v2.services.voice_rewrite_guidance import (
     VoiceProfileAnalysisRequiredError,
     VoiceProfileInactiveError,
+)
+from app.v2.services.workspace_analytics_query_service import (
+    WorkspaceAnalyticsQueryLimitError,
 )
 
 __all__ = [
@@ -57,12 +95,19 @@ from app.v2.api.models import (
     ArchiveVoiceProfileRequest,
     CandidateControlRewriteEvidence,
     ClaimLockRewriteEvidence,
+    CreateEnterpriseQuotaLimitRequest,
     CreateUserRequest,
     CreateUserResponse,
     CreateVoiceProfileRequest,
     CreateWorkspaceRequest,
     CreateWorkspaceResponse,
+    EnterpriseQuotaLimitListResponse,
+    EnterpriseQuotaLimitResponse,
+    EvaluationEvidenceListResponse,
+    EvaluationEvidenceResponse,
     MultiCandidateRewriteEvidence,
+    RoutingEvidenceListResponse,
+    RoutingEvidenceResponse,
     UpdateVoiceProfileRequest,
     VoiceProfileAnalysisResponse,
     VoiceProfileListResponse,
@@ -79,6 +124,41 @@ router = APIRouter(
     prefix="/api/v2",
     tags=["v2"],
 )
+
+
+def _quota_admin_http_exception(
+    exc: EnterpriseQuotaAdministrationError,
+) -> HTTPException:
+    if exc.reason in {
+        QuotaAdministrationFailureReason.AUTHORIZATION_RESOLUTION_FAILED,
+        QuotaAdministrationFailureReason.AUTHORIZATION_DENIED,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=exc.reason.value,
+        )
+
+    if (
+        exc.reason
+        is QuotaAdministrationFailureReason.LIMIT_NOT_FOUND
+    ):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=exc.reason.value,
+        )
+
+    if (
+        exc.reason
+        is QuotaAdministrationFailureReason.LIMIT_SCOPE_MISMATCH
+    ):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.reason.value,
+        )
+
+    raise RuntimeError(
+        "unsupported enterprise quota administration failure reason"
+    )
 
 
 @router.post(
@@ -123,6 +203,102 @@ def create_workspace(
     )
 
 
+@router.post(
+    "/workspaces/{workspace_id}/quota-limits",
+    response_model=EnterpriseQuotaLimitResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_enterprise_quota_limit(
+    workspace_id: str,
+    request: CreateEnterpriseQuotaLimitRequest,
+) -> EnterpriseQuotaLimitResponse:
+    quota_limit = EnterpriseWorkspaceQuotaLimit(
+        quota_limit_id=request.quota_limit_id,
+        workspace_id=workspace_id,
+        dimension=request.dimension,
+        window=request.window,
+        limit=request.limit,
+    )
+
+    try:
+        created = services.quota_admin.create_limit(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            quota_limit=quota_limit,
+        )
+    except EnterpriseQuotaAdministrationError as exc:
+        raise _quota_admin_http_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return EnterpriseQuotaLimitResponse(
+        quota_limit=created,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/quota-limits",
+    response_model=EnterpriseQuotaLimitListResponse,
+)
+def list_enterprise_quota_limits(
+    workspace_id: str,
+    dimension: EnterpriseQuotaDimension,
+    actor_user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=10000,
+    ),
+) -> EnterpriseQuotaLimitListResponse:
+    try:
+        quota_limits = services.quota_admin.list_limits(
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+            dimension=dimension,
+            limit=limit,
+        )
+    except EnterpriseQuotaAdministrationError as exc:
+        raise _quota_admin_http_exception(exc) from exc
+
+    return EnterpriseQuotaLimitListResponse(
+        workspace_id=workspace_id,
+        dimension=dimension,
+        quota_limits=quota_limits,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/quota-limits/{quota_limit_id}",
+    response_model=EnterpriseQuotaLimitResponse,
+)
+def get_enterprise_quota_limit(
+    workspace_id: str,
+    quota_limit_id: str,
+    actor_user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> EnterpriseQuotaLimitResponse:
+    try:
+        quota_limit = services.quota_admin.get_limit(
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+            quota_limit_id=quota_limit_id,
+        )
+    except EnterpriseQuotaAdministrationError as exc:
+        raise _quota_admin_http_exception(exc) from exc
+
+    return EnterpriseQuotaLimitResponse(
+        quota_limit=quota_limit,
+    )
+
+
 @router.get(
     "/workspaces/{workspace_id}/history",
     response_model=WorkspaceHistoryResponse,
@@ -156,6 +332,43 @@ def list_workspace_history(
         workspace_id=workspace_id,
         records=records,
     )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/analytics",
+    response_model=WorkspaceAnalyticsSnapshot,
+)
+def get_workspace_analytics(
+    workspace_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> WorkspaceAnalyticsSnapshot:
+    try:
+        return services.workspace_analytics.query(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except WorkspaceAnalyticsQueryLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(
@@ -284,6 +497,11 @@ def create_workspace_rewrite(
             ),
         )
 
+    except EnterpriseQuotaAdmissionDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
     except (
         CandidateClaimLockViolationError,
         CandidateGenerationError,
@@ -354,6 +572,11 @@ def create_workspace_long_document_rewrite(
             ),
         )
 
+    except EnterpriseQuotaAdmissionDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -612,4 +835,186 @@ def analyze_voice_profile(
     return VoiceProfileAnalysisResponse(
         profile=result.profile,
         evidence=result.evidence,
+    )
+
+def _require_platform_evidence_access(
+    authorization: str | None,
+) -> None:
+    try:
+        require_evidence_access(
+            authorization=authorization,
+        )
+    except EvidenceExposureDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        ) from exc
+    except EvidenceAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
+    "/evidence/routing/{evidence_id}",
+    response_model=RoutingEvidenceResponse,
+)
+def get_routing_evidence(
+    evidence_id: str,
+    authorization: str | None = Header(
+        default=None,
+    ),
+) -> RoutingEvidenceResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
+    try:
+        evidence = services.routing_evidence_query.get(
+            evidence_id=evidence_id,
+        )
+    except RoutingEvidenceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return RoutingEvidenceResponse(
+        evidence=evidence,
+    )
+
+
+@router.get(
+    "/evidence/routing",
+    response_model=RoutingEvidenceListResponse,
+)
+def list_routing_evidence(
+    authorization: str | None = Header(
+        default=None,
+    ),
+    policy_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    decision_status: RoutingDecisionStatus | None = None,
+    execution_outcome: (
+        RoutingEvidenceExecutionOutcome | None
+    ) = None,
+    executed_target_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=10000,
+    ),
+) -> RoutingEvidenceListResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
+    records = services.routing_evidence_query.list_records(
+        policy_id=policy_id,
+        decision_status=decision_status,
+        execution_outcome=execution_outcome,
+        executed_target_id=executed_target_id,
+        limit=limit,
+    )
+
+    return RoutingEvidenceListResponse(
+        records=records,
+    )
+
+
+@router.get(
+    "/evidence/evaluation/{evidence_id}",
+    response_model=EvaluationEvidenceResponse,
+)
+def get_evaluation_evidence(
+    evidence_id: str,
+    authorization: str | None = Header(
+        default=None,
+    ),
+) -> EvaluationEvidenceResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
+    try:
+        evidence = services.evaluation_evidence_query.get(
+            evidence_id=evidence_id,
+        )
+    except EvaluationEvidenceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return EvaluationEvidenceResponse(
+        evidence=evidence,
+    )
+
+
+@router.get(
+    "/evidence/evaluation",
+    response_model=EvaluationEvidenceListResponse,
+)
+def list_evaluation_evidence(
+    authorization: str | None = Header(
+        default=None,
+    ),
+    run_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    dataset_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    dataset_version: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    target_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    run_outcome: EvaluationRunOutcome | None = None,
+    gate_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=10000,
+    ),
+) -> EvaluationEvidenceListResponse:
+    _require_platform_evidence_access(
+        authorization
+    )
+
+    records = (
+        services.evaluation_evidence_query.list_records(
+            run_id=run_id,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+            target_id=target_id,
+            run_outcome=run_outcome,
+            gate_id=gate_id,
+            limit=limit,
+        )
+    )
+
+    return EvaluationEvidenceListResponse(
+        records=records,
     )

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import (
+    APIRouter,
+    Header,
+    HTTPException,
+    status,
+)
 from fastapi.responses import PlainTextResponse
 
 from app.core.settings import Settings
@@ -12,6 +17,11 @@ from app.domain.models import (
 )
 from app.observability.context import get_request_id
 from app.observability.metrics import metrics_registry
+from app.observability.metrics_access import (
+    MetricsAccessDeniedError,
+    MetricsExposureDisabledError,
+    require_metrics_access,
+)
 from app.providers.registry import build_rewrite_provider
 from app.workflows.rewrite_workflow import RewriteWorkflow
 
@@ -49,7 +59,26 @@ def ready() -> dict[str, str]:
     "/metrics",
     response_class=PlainTextResponse,
 )
-def metrics() -> PlainTextResponse:
+def metrics(
+    authorization: str | None = Header(
+        default=None,
+    ),
+) -> PlainTextResponse:
+    try:
+        require_metrics_access(
+            authorization=authorization,
+        )
+    except MetricsExposureDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        ) from exc
+    except MetricsAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
     return PlainTextResponse(
         content=metrics_registry.render_prometheus(),
         media_type="text/plain; version=0.0.4",

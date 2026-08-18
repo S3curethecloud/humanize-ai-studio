@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from time import perf_counter
 
 from app.domain.models import RewriteRequest
 from app.v2.domain.claim_lock import (
@@ -19,11 +21,17 @@ from app.v2.services.claim_lock_preparation import (
     ClaimLockPreparationResult,
     ClaimLockPreparationService,
 )
+from app.v2.services.complex_rewrite_observability import (
+    LongDocumentObservability,
+)
 from app.v2.services.document_reconstructor import (
     DocumentReconstructor,
 )
 from app.v2.services.document_structure_detector import (
     DocumentStructureDetector,
+)
+from app.v2.services.enterprise_long_document_quota_admission_service import (
+    EnterpriseLongDocumentQuotaAdmissionService,
 )
 from app.v2.services.long_document_audit_service import (
     LongDocumentAuditService,
@@ -58,20 +66,30 @@ class LongDocumentWorkspaceRewriteService:
         workspace_service: WorkspaceService,
         claim_lock_preparation_service: ClaimLockPreparationService,
         structure_detector: DocumentStructureDetector,
+        long_document_quota_admission: (
+            EnterpriseLongDocumentQuotaAdmissionService | None
+        ) = None,
         planner: SectionRewritePlanner,
         orchestrator: SectionRewriteOrchestrator,
         control_evaluator: LongDocumentControlEvaluator,
         reconstructor: DocumentReconstructor,
         audit_service: LongDocumentAuditService,
+        observability: LongDocumentObservability | None = None,
+        duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
         self._workspace_service = workspace_service
         self._claim_lock_preparation_service = claim_lock_preparation_service
         self._structure_detector = structure_detector
+        self._long_document_quota_admission = (
+            long_document_quota_admission
+        )
         self._planner = planner
         self._orchestrator = orchestrator
         self._control_evaluator = control_evaluator
         self._reconstructor = reconstructor
         self._audit_service = audit_service
+        self._observability = observability
+        self._duration_clock = duration_clock
 
     def execute(
         self,
@@ -85,6 +103,8 @@ class LongDocumentWorkspaceRewriteService:
         ] = (),
         claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
     ) -> LongDocumentWorkspaceRewriteResult:
+        started_at = self._duration_clock()
+
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -104,6 +124,13 @@ class LongDocumentWorkspaceRewriteService:
         plan = self._planner.plan(
             structure=structure,
         )
+
+        if self._long_document_quota_admission is not None:
+            self._long_document_quota_admission.admit(
+                workspace_id=workspace_id,
+                request=request,
+                section_count=len(plan.entries),
+            )
 
         execution = self._orchestrator.execute(
             request=request,
@@ -126,6 +153,22 @@ class LongDocumentWorkspaceRewriteService:
             evaluation=evaluation,
             reconstruction=reconstruction,
         )
+
+        if self._observability is not None:
+            duration_ms = max(
+                0.0,
+                (self._duration_clock() - started_at) * 1000.0,
+            )
+
+            self._observability.record_success(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                request=request,
+                evaluation=evaluation,
+                reconstruction=reconstruction,
+                audit=audit,
+                duration_ms=duration_ms,
+            )
 
         return LongDocumentWorkspaceRewriteResult(
             claim_lock_preparation=(claim_lock_preparation),

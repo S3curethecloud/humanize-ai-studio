@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from time import perf_counter
+
 from app.domain.models import (
     ReleaseDecision,
     RewriteRequest,
@@ -28,8 +31,14 @@ from app.v2.services.claim_lock_validator import (
     ClaimLockValidator,
     ClaimLockViolationError,
 )
+from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
+    EnterpriseSingleRewriteQuotaAdmissionService,
+)
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
+)
+from app.v2.services.single_rewrite_observability import (
+    SingleRewriteObservability,
 )
 from app.v2.services.workspace_service import (
     WorkspaceService,
@@ -61,12 +70,18 @@ class WorkspaceRewriteService:
         workspace_service: WorkspaceService,
         history_service: RewriteHistoryService,
         workflow: RewriteWorkflow,
+        quota_admission: (EnterpriseSingleRewriteQuotaAdmissionService | None) = None,
         claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
         claim_lock_validator: (ClaimLockValidator | None) = None,
+        observability: SingleRewriteObservability | None = None,
+        duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
         self._workspace_service = workspace_service
         self._history_service = history_service
         self._workflow = workflow
+        self._quota_admission = quota_admission
+        self._observability = observability
+        self._duration_clock = duration_clock
         self._claim_lock_preparation_service = (
             claim_lock_preparation_service or ClaimLockPreparationService()
         )
@@ -87,6 +102,8 @@ class WorkspaceRewriteService:
         ] = (),
         claim_lock_enforcement_mode: ClaimLockEnforcementMode = (ClaimLockEnforcementMode.STRICT),
     ) -> WorkspaceRewriteResult:
+        started_at = self._duration_clock()
+
         self._workspace_service.require_membership(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -97,6 +114,12 @@ class WorkspaceRewriteService:
             explicit_terms=explicit_protected_terms,
             enforcement_mode=claim_lock_enforcement_mode,
         )
+
+        if self._quota_admission is not None:
+            self._quota_admission.admit(
+                workspace_id=workspace_id,
+                request=request,
+            )
 
         response = self._workflow.execute(request)
 
@@ -136,6 +159,22 @@ class WorkspaceRewriteService:
                 else None
             ),
         )
+
+        if self._observability is not None:
+            duration_ms = max(
+                0.0,
+                (self._duration_clock() - started_at) * 1000.0,
+            )
+
+            self._observability.record_success(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                request=request,
+                response=response,
+                history=history,
+                claim_lock_validation=(claim_lock_validation),
+                duration_ms=duration_ms,
+            )
 
         return WorkspaceRewriteResult(
             response=response,

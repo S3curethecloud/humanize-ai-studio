@@ -21,6 +21,11 @@ from app.v2.domain.candidate_ranking import (
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_quota import (
+    EnterpriseQuotaDimension,
+    EnterpriseQuotaWindow,
+    EnterpriseWorkspaceQuotaLimit,
+)
 from app.v2.domain.long_document_audit import (
     LongDocumentAuditRecord,
 )
@@ -40,6 +45,10 @@ from app.v2.domain.models import (
 from app.v2.domain.rewrite_candidates import (
     RewriteCandidateDiffSet,
     RewriteCandidateSet,
+)
+from app.v2.domain.routing_eval_evidence import (
+    EvaluationEvidenceRecord,
+    RoutingEvidenceRecord,
 )
 from app.v2.services.claim_lock_extractor import (
     ExplicitProtectedTerm,
@@ -88,6 +97,37 @@ class CreateUserResponse(BaseModel):
 
 class CreateWorkspaceResponse(BaseModel):
     workspace: WorkspaceRecord
+
+
+class CreateEnterpriseQuotaLimitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    quota_limit_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    dimension: EnterpriseQuotaDimension
+    window: EnterpriseQuotaWindow
+    limit: int = Field(
+        ge=0,
+    )
+
+
+class EnterpriseQuotaLimitResponse(BaseModel):
+    quota_limit: EnterpriseWorkspaceQuotaLimit
+
+
+class EnterpriseQuotaLimitListResponse(BaseModel):
+    workspace_id: str
+    dimension: EnterpriseQuotaDimension
+    quota_limits: tuple[
+        EnterpriseWorkspaceQuotaLimit,
+        ...,
+    ]
 
 
 class WorkspaceRewriteRequest(BaseModel):
@@ -289,3 +329,24 @@ class WorkspaceLongDocumentRewriteResponse(BaseModel):
     reconstruction: DocumentReconstruction
     audit: LongDocumentAuditRecord
     claim_lock: ClaimLockRewriteEvidence | None = None
+
+class RoutingEvidenceResponse(BaseModel):
+    evidence: RoutingEvidenceRecord
+
+
+class RoutingEvidenceListResponse(BaseModel):
+    records: tuple[
+        RoutingEvidenceRecord,
+        ...,
+    ]
+
+
+class EvaluationEvidenceResponse(BaseModel):
+    evidence: EvaluationEvidenceRecord
+
+
+class EvaluationEvidenceListResponse(BaseModel):
+    records: tuple[
+        EvaluationEvidenceRecord,
+        ...,
+    ]
