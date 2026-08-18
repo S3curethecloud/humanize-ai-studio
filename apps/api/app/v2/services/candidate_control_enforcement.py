@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from app.domain.models import (
+    ReleaseDecision,
+    RewriteRequest,
+    RewriteResponse,
+)
+from app.v2.domain.candidate_generation import (
+    CandidateGenerationPlan,
+)
+from app.v2.domain.claim_lock import (
+    ClaimLockEnforcementMode,
+)
+from app.v2.services.candidate_rewrite_orchestrator import (
+    CandidateGenerationExecution,
+    CandidateRewriteOrchestrator,
+)
+from app.v2.services.claim_lock_extractor import (
+    ExplicitProtectedTerm,
+)
+from app.v2.services.claim_lock_preparation import (
+    ClaimLockPreparationResult,
+    ClaimLockPreparationService,
+)
+from app.v2.services.claim_lock_validator import (
+    ClaimLockValidationDecision,
+    ClaimLockValidationResult,
+    ClaimLockValidator,
+)
+
+
+@dataclass(frozen=True)
+class CandidateControlEvidence:
+    candidate_id: str
+    ordinal: int
+    v1_release_decision: ReleaseDecision
+    claim_lock_validation: ClaimLockValidationResult
+
+    @property
+    def v1_failed(self) -> bool:
+        return self.v1_release_decision is ReleaseDecision.FAIL
+
+    @property
+    def claim_lock_violated(self) -> bool:
+        return self.claim_lock_validation.decision is ClaimLockValidationDecision.VIOLATION
+
+
+@dataclass(frozen=True)
+class ControlledCandidateGenerationExecution:
+    generation: CandidateGenerationExecution
+    claim_lock_preparation: ClaimLockPreparationResult
+    controls: tuple[
+        CandidateControlEvidence,
+        ...,
+    ]
+
+
+class CandidateClaimLockViolationError(ValueError):
+    def __init__(
+        self,
+        *,
+        controls: tuple[
+            CandidateControlEvidence,
+            ...,
+        ],
+    ) -> None:
+        self.controls = controls
+
+        self.violating_candidate_ids = tuple(
+            control.candidate_id
+            for control in controls
+            if (not control.v1_failed and control.claim_lock_violated)
+        )
+
+        joined_ids = ", ".join(self.violating_candidate_ids)
+
+        super().__init__(
+            "candidate claim lock strict enforcement failed"
+            + (f": {joined_ids}" if joined_ids else "")
+        )
+
+
+class ControlledCandidateRewriteOrchestrator:
+    def __init__(
+        self,
+        *,
+        candidate_orchestrator: CandidateRewriteOrchestrator,
+        claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
+        claim_lock_validator: (ClaimLockValidator | None) = None,
+    ) -> None:
+        self._candidate_orchestrator = candidate_orchestrator
+        self._claim_lock_preparation_service = (
+            claim_lock_preparation_service or ClaimLockPreparationService()
+        )
+        self._claim_lock_validator = claim_lock_validator or ClaimLockValidator()
+
+    def execute(
+        self,
+        *,
+        request: RewriteRequest,
+        plan: CandidateGenerationPlan,
+        explicit_protected_terms: tuple[
+            ExplicitProtectedTerm,
+            ...,
+        ] = (),
+        claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
+    ) -> ControlledCandidateGenerationExecution:
+        claim_lock_preparation = self._claim_lock_preparation_service.prepare(
+            text=request.text,
+            explicit_terms=explicit_protected_terms,
+            enforcement_mode=(claim_lock_enforcement_mode),
+        )
+
+        generation = self._candidate_orchestrator.execute(
+            request=request,
+            plan=plan,
+        )
+
+        controls = self._build_controls(
+            generation=generation,
+            claim_lock_preparation=(claim_lock_preparation),
+        )
+
+        if claim_lock_enforcement_mode is ClaimLockEnforcementMode.STRICT and any(
+            (not control.v1_failed and control.claim_lock_violated) for control in controls
+        ):
+            raise CandidateClaimLockViolationError(
+                controls=controls,
+            )
+
+        return ControlledCandidateGenerationExecution(
+            generation=generation,
+            claim_lock_preparation=(claim_lock_preparation),
+            controls=controls,
+        )
+
+    def _build_controls(
+        self,
+        *,
+        generation: CandidateGenerationExecution,
+        claim_lock_preparation: (ClaimLockPreparationResult),
+    ) -> tuple[
+        CandidateControlEvidence,
+        ...,
+    ]:
+        candidates = generation.candidate_set.candidates
+        responses = generation.responses
+
+        if len(candidates) != len(responses):
+            raise RuntimeError(
+                "candidate control enforcement requires one V1 response per candidate"
+            )
+
+        controls: list[CandidateControlEvidence] = []
+
+        for candidate, response in zip(
+            candidates,
+            responses,
+            strict=True,
+        ):
+            self._require_candidate_response_match(
+                candidate_text=(candidate.rewritten_text),
+                response=response,
+            )
+
+            validation = self._claim_lock_validator.validate(
+                claim_lock=(claim_lock_preparation.claim_lock),
+                rewritten_text=(response.rewritten_text),
+            )
+
+            controls.append(
+                CandidateControlEvidence(
+                    candidate_id=(candidate.candidate_id),
+                    ordinal=candidate.ordinal,
+                    v1_release_decision=(response.verification.decision),
+                    claim_lock_validation=validation,
+                )
+            )
+
+        return tuple(controls)
+
+    @staticmethod
+    def _require_candidate_response_match(
+        *,
+        candidate_text: str,
+        response: RewriteResponse,
+    ) -> None:
+        if candidate_text != response.rewritten_text:
+            raise RuntimeError("candidate text does not match its V1 workflow response")
