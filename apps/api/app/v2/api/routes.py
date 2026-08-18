@@ -23,6 +23,10 @@ from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseWorkspaceQuotaLimit,
 )
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+    permissions_for_role,
+)
 from app.v2.domain.eval_ops import (
     EvaluationRunOutcome,
 )
@@ -47,6 +51,13 @@ from app.v2.services.claim_lock_validator import (
 )
 from app.v2.services.document_reconstructor import (
     DocumentReconstructionIntegrityError,
+)
+from app.v2.services.enterprise_authorization_resolver import (
+    AuthorizationResolutionFailureReason,
+    AuthorizationResolutionStatus,
+)
+from app.v2.services.enterprise_authorization_service import (
+    AuthorizationDecision,
 )
 from app.v2.services.enterprise_quota_admin_service import (
     EnterpriseQuotaAdministrationError,
@@ -103,6 +114,7 @@ from app.v2.api.models import (
     CreateWorkspaceResponse,
     EnterpriseQuotaLimitListResponse,
     EnterpriseQuotaLimitResponse,
+    EnterpriseWorkspaceAccessContextResponse,
     EvaluationEvidenceListResponse,
     EvaluationEvidenceResponse,
     MultiCandidateRewriteEvidence,
@@ -296,6 +308,98 @@ def get_enterprise_quota_limit(
 
     return EnterpriseQuotaLimitResponse(
         quota_limit=quota_limit,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/access-context",
+    response_model=EnterpriseWorkspaceAccessContextResponse,
+)
+def get_enterprise_workspace_access_context(
+    workspace_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> EnterpriseWorkspaceAccessContextResponse:
+    runtime = services.enterprise_authorization
+
+    resolution = runtime.authorization_resolver.resolve(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        permission=EnterprisePermission.WORKSPACE_READ,
+    )
+
+    if (
+        resolution.status
+        is AuthorizationResolutionStatus.RESOLUTION_FAILED
+    ):
+        if (
+            resolution.failure_reason
+            is AuthorizationResolutionFailureReason.WORKSPACE_NOT_FOUND
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="workspace_not_found",
+            )
+
+        if (
+            resolution.failure_reason
+            is AuthorizationResolutionFailureReason.MEMBERSHIP_NOT_FOUND
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="membership_not_found",
+            )
+
+        raise RuntimeError(
+            "unsupported enterprise authorization resolution failure"
+        )
+
+    authorization = resolution.authorization
+
+    if authorization is None:
+        raise RuntimeError(
+            "resolved enterprise authorization requires a result"
+        )
+
+    if authorization.decision is not AuthorizationDecision.ALLOW:
+        denial_reason = authorization.denial_reason
+
+        if denial_reason is None:
+            raise RuntimeError(
+                "denied enterprise authorization requires a reason"
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=denial_reason.value,
+        )
+
+    workspace = runtime.workspaces.get(
+        workspace_id
+    )
+    membership = runtime.memberships.get_current(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    if workspace is None or membership is None:
+        raise RuntimeError(
+            "enterprise authorization resolved without canonical context"
+        )
+
+    permissions = tuple(
+        sorted(
+            permissions_for_role(membership.role),
+            key=lambda permission: permission.value,
+        )
+    )
+
+    return EnterpriseWorkspaceAccessContextResponse(
+        workspace=workspace,
+        membership=membership,
+        permissions=permissions,
     )
 
 

@@ -26,6 +26,13 @@ from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaWindow,
     EnterpriseWorkspaceQuotaLimit,
 )
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.domain.enterprise_workspace import (
+    EnterpriseWorkspace,
+    EnterpriseWorkspaceMembership,
+)
 from app.v2.domain.long_document_audit import (
     LongDocumentAuditRecord,
 )
@@ -126,6 +133,15 @@ class EnterpriseQuotaLimitListResponse(BaseModel):
     dimension: EnterpriseQuotaDimension
     quota_limits: tuple[
         EnterpriseWorkspaceQuotaLimit,
+        ...,
+    ]
+
+
+class EnterpriseWorkspaceAccessContextResponse(BaseModel):
+    workspace: EnterpriseWorkspace
+    membership: EnterpriseWorkspaceMembership
+    permissions: tuple[
+        EnterprisePermission,
         ...,
     ]
 
