@@ -82,6 +82,12 @@ from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
 from app.v2.services.eval_evidence_service import (
     EvaluationEvidenceService,
 )
+from app.v2.services.eval_ops_repository_factory import (
+    build_evaluation_ops_repositories,
+)
+from app.v2.services.governed_eval_ops_runtime_factory import (
+    build_governed_evaluation_ops_runtime,
+)
 from app.v2.services.long_document_audit_service import (
     LongDocumentAuditService,
 )
@@ -236,6 +242,24 @@ class V2Services:
             ),
             telemetry=metrics_registry,
         )
+
+        self.evaluation_ops_repositories = (
+            build_evaluation_ops_repositories(
+                resolved_persistence,
+            )
+        )
+        self.evaluation_ops = (
+            build_governed_evaluation_ops_runtime(
+                settings=resolved_provider_settings,
+                catalog=self.provider_catalog,
+                datasets=(
+                    self.evaluation_ops_repositories.datasets
+                ),
+                runs=self.evaluation_ops_repositories.runs,
+                evidence=self.evaluation_evidence,
+            )
+        )
+
         self.routing_evidence_query = (
             RoutingEvidenceQueryService(
                 repository=(
