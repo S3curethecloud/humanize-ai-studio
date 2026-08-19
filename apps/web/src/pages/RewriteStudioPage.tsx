@@ -151,16 +151,19 @@ export default function RewriteStudioPage() {
   return (
 
 
-      <main className="workspace">
-        <header className="workspace-header">
+      <main className="workspace workspace--enterprise">
+        <header className="workspace-header workspace-header--enterprise">
           <div>
             <p className="eyebrow">
-              Meaning-preserving rewriting
+              Humanize Studio · Rewrite Studio
             </p>
-            <h1>Humanize your AI text</h1>
+
+            <h1>Enterprise Rewrite Workspace</h1>
+
             <p>
-              Improve tone and naturalness without losing
-              protected facts, numbers, dates, or intent.
+              Transform content with meaning preservation,
+              governed execution, factual verification, and
+              auditable provider evidence.
             </p>
           </div>
 
@@ -169,11 +172,53 @@ export default function RewriteStudioPage() {
           </div>
         </header>
 
-        <section className="studio-grid" id="studio">
+        <section
+          className="rewrite-control-strip"
+          aria-label="Rewrite governance model"
+        >
+          <article>
+            <span>01</span>
+            <div>
+              <strong>Meaning preservation</strong>
+              <p>
+                Facts, numbers, dates, and intent remain
+                protected through verification.
+              </p>
+            </div>
+          </article>
+
+          <article>
+            <span>02</span>
+            <div>
+              <strong>Governed routing</strong>
+              <p>
+                Provider selection remains a control-plane
+                responsibility, not an editor control.
+              </p>
+            </div>
+          </article>
+
+          <article>
+            <span>03</span>
+            <div>
+              <strong>Audit evidence</strong>
+              <p>
+                Rewrite decisions and provider execution
+                remain visible after each submission.
+              </p>
+            </div>
+          </article>
+        </section>
+
+        <section className="studio-grid studio-grid--enterprise" id="studio">
           <form
-            className="editor-card"
+            className="editor-card editor-card--workspace"
             onSubmit={handleSubmit}
           >
+            <div className="workspace-panel-label">
+              <span>Source workspace</span>
+              <strong>Draft and transformation controls</strong>
+            </div>
             <div className="card-header">
               <div>
                 <p className="eyebrow">Source text</p>
@@ -290,7 +335,13 @@ export default function RewriteStudioPage() {
             )}
           </form>
 
-          <section className="result-column">
+          <section className="result-column result-column--governed">
+            <div className="workspace-panel-label">
+              <span>Governed result</span>
+              <strong>
+                Decision, output, verification, and evidence
+              </strong>
+            </div>
             {response && submittedResult ? (
               <>
                 {isResultStale && (

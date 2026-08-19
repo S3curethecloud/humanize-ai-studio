@@ -66,7 +66,11 @@ export default function App() {
   let page;
 
   if (activeRoute === "dashboard") {
-    page = <DashboardPage />;
+    page = (
+      <DashboardPage
+        accessContext={accessContext}
+      />
+    );
   } else if (activeRoute === "rewrite") {
     page = <RewriteStudioPage />;
   } else {
