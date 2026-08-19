@@ -44,13 +44,16 @@ class RecordingProvider:
         )
 
 
-def test_no_change_exposes_auditable_decision() -> None:
+def test_light_edit_no_change_exposes_auditable_decision() -> None:
     provider = RecordingProvider()
     workflow = RewriteWorkflow(provider=provider)
 
     result = workflow.execute(
         RewriteRequest(
-            text=("The policy engine evaluates every proposed tool call before execution.")
+            text=(
+                "The policy engine evaluates every proposed tool call before execution."
+            ),
+            intensity="light_edit",
         )
     )
 
@@ -65,12 +68,15 @@ def test_no_change_exposes_auditable_decision() -> None:
     assert evidence.signals[0].signal_type == "already_clear"
 
 
-def test_minimal_edit_exposes_formulaic_signal() -> None:
+def test_light_edit_exposes_formulaic_signal() -> None:
     provider = RecordingProvider()
     workflow = RewriteWorkflow(provider=provider)
 
     result = workflow.execute(
-        RewriteRequest(text="Furthermore, the migration completed in 30 days.")
+        RewriteRequest(
+            text="Furthermore, the migration completed in 30 days.",
+            intensity="light_edit",
+        )
     )
 
     evidence = result.rewrite_necessity
@@ -81,6 +87,31 @@ def test_minimal_edit_exposes_formulaic_signal() -> None:
     assert evidence.provider_required is False
     assert evidence.signals[0].signal_type == ("formulaic_language")
     assert evidence.signals[0].evidence == ["furthermore"]
+
+
+def test_natural_rewrite_invokes_provider_for_clear_text() -> None:
+    provider = RecordingProvider()
+    workflow = RewriteWorkflow(provider=provider)
+
+    result = workflow.execute(
+        RewriteRequest(
+            text=(
+                "The policy engine evaluates every "
+                "proposed tool call before execution."
+            ),
+            intensity="natural_rewrite",
+        )
+    )
+
+    evidence = result.rewrite_necessity
+
+    assert provider.call_count == 1
+    assert evidence.decision == "full_rewrite"
+    assert evidence.provider_required is True
+    assert any(
+        signal.signal_type == "intensity_request"
+        for signal in evidence.signals
+    )
 
 
 def test_full_rewrite_exposes_structural_signal() -> None:
@@ -128,7 +159,12 @@ def test_deep_reconstruction_exposes_intensity_signal() -> None:
 def test_api_serializes_rewrite_necessity_contract() -> None:
     response = client.post(
         "/api/v1/rewrites",
-        json={"text": ("Additionally, the service processed 12,000 requests.")},
+        json={
+            "text": (
+                "Additionally, the service processed 12,000 requests."
+            ),
+            "intensity": "light_edit",
+        },
     )
 
     assert response.status_code == 200

@@ -99,7 +99,8 @@ _FORMULAIC_LABELS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?i)\bin conclusion\b"), "in conclusion"),
 )
 
-_FULL_REWRITE_INTENSITIES = {
+_PROVIDER_REWRITE_INTENSITIES = {
+    "natural_rewrite",
     "full_rewrite",
     "substantial_rewrite",
     "aggressive_rewrite",
@@ -179,12 +180,12 @@ class RewriteNecessityAnalyzer:
 
         normalized_intensity = request.intensity.strip().casefold()
 
-        if normalized_intensity in _FULL_REWRITE_INTENSITIES:
+        if normalized_intensity in _PROVIDER_REWRITE_INTENSITIES:
             signals.append(
                 RewriteSignal(
                     signal_type=RewriteSignalType.INTENSITY_REQUEST,
                     description=(
-                        "The requested intensity explicitly authorizes substantial reconstruction."
+                        "The requested intensity explicitly authorizes generative rewriting."
                     ),
                     score=60,
                     evidence=[request.intensity],
@@ -246,7 +247,7 @@ class RewriteNecessityAnalyzer:
             signals=signals,
             rationale=(
                 "The text contains structural rewrite needs or the requested "
-                "intensity explicitly requires generative reconstruction."
+                "intensity explicitly requires governed generative rewriting."
             ),
         )
 
@@ -256,7 +257,7 @@ class RewriteNecessityAnalyzer:
         signals: list[RewriteSignal],
         intensity: str,
     ) -> RewriteDecision:
-        if intensity in _FULL_REWRITE_INTENSITIES:
+        if intensity in _PROVIDER_REWRITE_INTENSITIES:
             return RewriteDecision.FULL_REWRITE
 
         if not signals:
