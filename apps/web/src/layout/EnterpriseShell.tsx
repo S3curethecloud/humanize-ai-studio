@@ -94,7 +94,7 @@ export function EnterpriseShell({
           </span>
 
           <div className="enterprise-brand__copy">
-            <strong>Humanize AI</strong>
+            <strong>Humanize</strong>
             <span>Enterprise</span>
           </div>
         </div>

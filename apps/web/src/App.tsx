@@ -82,7 +82,7 @@ export default function App() {
 
   useEffect(() => {
     document.title =
-      `${metadata.label} | Humanize AI Enterprise`;
+      `${metadata.label} | Humanize Enterprise`;
   }, [metadata.label]);
 
   return (
