@@ -152,6 +152,12 @@ from app.v2.services.workspace_analytics_query_service import (
 from app.v2.services.workspace_rewrite_service import (
     WorkspaceRewriteService,
 )
+from app.v2.repositories.workspace_authority_provisioning import (
+    build_atomic_workspace_authority_provisioner,
+)
+from app.v2.services.canonical_workspace_provisioning_service import (
+    CanonicalWorkspaceProvisioningService,
+)
 from app.v2.services.workspace_service import (
     WorkspaceService,
 )
@@ -323,6 +329,32 @@ class V2Services:
 
         if resolved_persistence.backend is PersistenceBackend.SQLITE:
             unit_of_work = build_unit_of_work(resolved_persistence)
+
+        self.workspace_authority_provisioner = (
+            build_atomic_workspace_authority_provisioner(
+                persistence_settings=resolved_persistence,
+                legacy_workspaces=repositories.workspaces,
+                legacy_memberships=repositories.memberships,
+                enterprise_organizations=(
+                    self.enterprise_authorization.organizations
+                ),
+                enterprise_workspaces=(
+                    self.enterprise_authorization.workspaces
+                ),
+                enterprise_memberships=(
+                    self.enterprise_authorization.memberships
+                ),
+            )
+        )
+
+        self.workspace_provisioning = (
+            CanonicalWorkspaceProvisioningService(
+                users=repositories.users,
+                provisioner=(
+                    self.workspace_authority_provisioner
+                ),
+            )
+        )
 
         self.workspace = WorkspaceService(
             users=repositories.users,

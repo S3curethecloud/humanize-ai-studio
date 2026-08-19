@@ -200,7 +200,7 @@ def create_workspace(
     request: CreateWorkspaceRequest,
 ) -> CreateWorkspaceResponse:
     try:
-        workspace = services.workspace.create_workspace(
+        workspace = services.workspace_provisioning.create_workspace(
             user_id=request.user_id,
             name=request.name,
         )
