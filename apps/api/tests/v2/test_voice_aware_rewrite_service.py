@@ -303,7 +303,7 @@ def test_unauthorized_profile_fails_before_provider_generation() -> None:
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="membership_not_found",
     ):
         voice_rewrite.execute(
             workspace_id=workspace_id,

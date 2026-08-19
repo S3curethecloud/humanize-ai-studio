@@ -209,7 +209,7 @@ class VoiceRewriteGuidanceService:
         user_id: str,
         profile_id: str,
     ) -> VoiceRewriteGuidance:
-        profile = self._voice_profiles.get_profile(
+        profile = self._voice_profiles.get_profile_for_use(
             workspace_id=workspace_id,
             user_id=user_id,
             profile_id=profile_id,

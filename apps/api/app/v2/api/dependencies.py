@@ -385,6 +385,7 @@ class V2Services:
         self.voice_profiles = VoiceProfileService(
             workspace_service=self.workspace,
             profiles=repositories.voice_profiles,
+            authorization_gate=self.workspace_authorization,
         )
 
         self.voice_rewrite_guidance = VoiceRewriteGuidanceService(

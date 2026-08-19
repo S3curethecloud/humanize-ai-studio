@@ -44,7 +44,7 @@ def _create_profile(
         display_name="Owner",
     )
 
-    workspace = services.workspace.create_workspace(
+    workspace = services.workspace_provisioning.create_workspace(
         user_id=user.user_id,
         name="Voice Workspace",
     )
@@ -104,7 +104,7 @@ def test_analysis_requires_workspace_membership() -> None:
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="membership_not_found",
     ):
         services.voice_profiles.analyze_profile(
             workspace_id=workspace_id,
@@ -164,7 +164,7 @@ def test_analysis_rejects_profile_without_samples() -> None:
         display_name="Owner",
     )
 
-    workspace = services.workspace.create_workspace(
+    workspace = services.workspace_provisioning.create_workspace(
         user_id=user.user_id,
         name="Voice Workspace",
     )

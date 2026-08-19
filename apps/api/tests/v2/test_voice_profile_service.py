@@ -41,7 +41,7 @@ def _create_workspace(
         display_name="Owner",
     )
 
-    workspace = services.workspace.create_workspace(
+    workspace = services.workspace_provisioning.create_workspace(
         user_id=user.user_id,
         name="Voice Workspace",
     )
@@ -88,7 +88,7 @@ def test_voice_profile_creation_requires_membership() -> None:
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="membership_not_found",
     ):
         services.voice_profiles.create_profile(
             workspace_id=workspace_id,
