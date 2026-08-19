@@ -15,6 +15,7 @@ import {
 import {
   EnterpriseShell
 } from "./layout/EnterpriseShell";
+import AnalyticsPage from "./pages/AnalyticsPage";
 import DashboardPage from "./pages/DashboardPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import RewriteStudioPage from "./pages/RewriteStudioPage";
@@ -73,6 +74,12 @@ export default function App() {
     );
   } else if (activeRoute === "rewrite") {
     page = <RewriteStudioPage />;
+  } else if (activeRoute === "analytics") {
+    page = (
+      <AnalyticsPage
+        accessContext={accessContext}
+      />
+    );
   } else {
     page = (
       <PlaceholderPage

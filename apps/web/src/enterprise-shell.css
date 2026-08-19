@@ -770,3 +770,219 @@
     flex-direction: column;
   }
 }
+
+/* UI3 workspace analytics */
+
+.enterprise-analytics {
+  display: grid;
+  gap: 28px;
+}
+
+.enterprise-analytics-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.enterprise-analytics-hero h1 {
+  margin: 8px 0 12px;
+  max-width: 760px;
+}
+
+.enterprise-analytics-hero__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.enterprise-secondary-button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--enterprise-border);
+  border-radius: 10px;
+  background: var(--enterprise-surface);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.enterprise-secondary-button:hover:not(:disabled) {
+  border-color: var(--enterprise-border-strong);
+}
+
+.enterprise-secondary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.enterprise-analytics-state,
+.enterprise-analytics-empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 22px;
+  border: 1px solid var(--enterprise-border);
+  border-radius: 16px;
+  background: var(--enterprise-surface);
+}
+
+.enterprise-analytics-state h2,
+.enterprise-analytics-empty strong {
+  margin: 0 0 6px;
+}
+
+.enterprise-analytics-state p,
+.enterprise-analytics-empty p {
+  margin: 0;
+  color: var(--enterprise-text-muted);
+}
+
+.enterprise-analytics-metric-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.enterprise-analytics-metric {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--enterprise-border);
+  border-radius: 14px;
+  background: var(--enterprise-surface);
+}
+
+.enterprise-analytics-metric span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--enterprise-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.enterprise-analytics-metric strong {
+  display: block;
+  font-size: 1.55rem;
+  line-height: 1.15;
+}
+
+.enterprise-analytics-operation-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.enterprise-analytics-operation {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--enterprise-border);
+  border-radius: 14px;
+  background: var(--enterprise-surface);
+}
+
+.enterprise-analytics-operation__header {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.enterprise-analytics-operation__header span {
+  color: var(--enterprise-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.enterprise-analytics-operation__header strong {
+  font-size: 1.15rem;
+}
+
+.enterprise-analytics-operation dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.enterprise-analytics-operation dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.enterprise-analytics-operation dt {
+  color: var(--enterprise-text-muted);
+}
+
+.enterprise-analytics-operation dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.enterprise-analytics-empty {
+  grid-template-columns: 1fr;
+}
+
+.enterprise-analytics-context {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--enterprise-border);
+  border-radius: 14px;
+  background: var(--enterprise-border);
+}
+
+.enterprise-analytics-context > div {
+  min-width: 0;
+  padding: 14px 16px;
+  background: var(--enterprise-surface);
+}
+
+.enterprise-analytics-context span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--enterprise-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.enterprise-analytics-context strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.86rem;
+}
+
+@media (max-width: 1100px) {
+  .enterprise-analytics-metric-grid,
+  .enterprise-analytics-context {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .enterprise-analytics-operation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .enterprise-analytics-hero {
+    display: grid;
+    align-items: start;
+  }
+
+  .enterprise-analytics-hero__actions {
+    justify-content: flex-start;
+  }
+
+  .enterprise-analytics-metric-grid,
+  .enterprise-analytics-context {
+    grid-template-columns: 1fr;
+  }
+}

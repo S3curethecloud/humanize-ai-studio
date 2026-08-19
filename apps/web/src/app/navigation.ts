@@ -109,7 +109,7 @@ export const ROUTE_METADATA: Record<
     group: "Operations",
     description:
       "Workspace operational and content-transformation analytics.",
-    availability: "planned"
+    availability: "available"
   },
   workspace: {
     label: "Workspace",
@@ -215,7 +215,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "analytics",
         label: "Analytics",
-        availability: "planned"
+        availability: "available"
       }
     ]
   },
