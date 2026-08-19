@@ -106,10 +106,17 @@ class LongDocumentAuditService:
         user_id: str,
         audit_id: str,
     ) -> LongDocumentAuditRecord | None:
-        self._workspace_service.require_membership(
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        if self._authorization_gate is not None:
+            self._authorization_gate.require(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                permission=EnterprisePermission.AUDIT_READ,
+            )
+        else:
+            self._workspace_service.require_membership(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
 
         record = self._repository.get(audit_id)
 
@@ -128,10 +135,17 @@ class LongDocumentAuditService:
         LongDocumentAuditRecord,
         ...,
     ]:
-        self._workspace_service.require_membership(
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        if self._authorization_gate is not None:
+            self._authorization_gate.require(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                permission=EnterprisePermission.AUDIT_READ,
+            )
+        else:
+            self._workspace_service.require_membership(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
 
         return self._repository.list_for_workspace(
             workspace_id=workspace_id,
