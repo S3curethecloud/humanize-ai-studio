@@ -81,7 +81,7 @@ def _workspace(
         display_name="Owner",
     )
 
-    workspace = services.workspace.create_workspace(
+    workspace = services.workspace_provisioning.create_workspace(
         user_id=user.user_id,
         name="Adversarial Workspace",
     )

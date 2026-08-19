@@ -27,6 +27,12 @@ from app.v2.repositories.interfaces import (
 from app.v2.services.voice_audit_authenticator import (
     VoiceAuditAuthenticator,
 )
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
+)
 from app.v2.services.workspace_service import (
     WorkspaceService,
 )
@@ -39,10 +45,12 @@ class RewriteHistoryService:
         workspace_service: WorkspaceService,
         history: RewriteHistoryRepository,
         voice_audit_authenticator: VoiceAuditAuthenticator | None = None,
+        authorization_gate: WorkspaceAuthorizationGate | None = None,
     ) -> None:
         self._workspace_service = workspace_service
         self._history = history
         self._voice_audit_authenticator = voice_audit_authenticator
+        self._authorization_gate = authorization_gate
 
     def record_rewrite(
         self,
@@ -127,10 +135,17 @@ class RewriteHistoryService:
         user_id: str,
         limit: int = 50,
     ) -> tuple[RewriteHistoryRecord, ...]:
-        self._workspace_service.require_membership(
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        if self._authorization_gate is not None:
+            self._authorization_gate.require(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                permission=EnterprisePermission.HISTORY_READ,
+            )
+        else:
+            self._workspace_service.require_membership(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
 
         records = self._history.list_for_workspace(
             workspace_id=workspace_id,

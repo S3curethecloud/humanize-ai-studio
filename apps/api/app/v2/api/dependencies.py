@@ -158,6 +158,9 @@ from app.v2.repositories.workspace_authority_provisioning import (
 from app.v2.services.canonical_workspace_provisioning_service import (
     CanonicalWorkspaceProvisioningService,
 )
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
+)
 from app.v2.services.workspace_service import (
     WorkspaceService,
 )
@@ -295,6 +298,15 @@ class V2Services:
             )
         )
 
+        self.workspace_authorization = (
+            WorkspaceAuthorizationGate(
+                resolver=(
+                    self.enterprise_authorization
+                    .authorization_resolver
+                ),
+            )
+        )
+
         quota_limits = (
             quota_runtime.limits
             if quota_runtime is not None
@@ -367,6 +379,7 @@ class V2Services:
             workspace_service=self.workspace,
             history=repositories.history,
             voice_audit_authenticator=(voice_audit_authenticator),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.voice_profiles = VoiceProfileService(
@@ -461,6 +474,7 @@ class V2Services:
             workspace_service=self.workspace,
             repository=observability_repository,
             aggregator=(WorkspaceAnalyticsAggregator()),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.single_rewrite_observability = SingleRewriteObservability(
