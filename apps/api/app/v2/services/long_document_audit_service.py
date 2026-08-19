@@ -16,6 +16,12 @@ from app.v2.repositories.long_document_audit import (
 from app.v2.services.long_document_control_evaluator import (
     LongDocumentControlEvaluation,
 )
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
+)
 from app.v2.services.workspace_service import (
     WorkspaceService,
 )
@@ -31,9 +37,11 @@ class LongDocumentAuditService:
         *,
         workspace_service: WorkspaceService,
         repository: LongDocumentAuditRepository,
+        authorization_gate: WorkspaceAuthorizationGate | None = None,
     ) -> None:
         self._workspace_service = workspace_service
         self._repository = repository
+        self._authorization_gate = authorization_gate
 
     def record(
         self,
@@ -43,10 +51,17 @@ class LongDocumentAuditService:
         evaluation: LongDocumentControlEvaluation,
         reconstruction: DocumentReconstruction,
     ) -> LongDocumentAuditRecord:
-        self._workspace_service.require_membership(
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        if self._authorization_gate is not None:
+            self._authorization_gate.require(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                permission=EnterprisePermission.REWRITE_EXECUTE,
+            )
+        else:
+            self._workspace_service.require_membership(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
 
         self._require_validated_artifact_linkage(
             evaluation=evaluation,

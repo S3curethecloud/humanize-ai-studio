@@ -67,10 +67,17 @@ class RewriteHistoryService:
         claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None,
         candidate_audit_snapshot: CandidateAuditSnapshot | None = None,
     ) -> RewriteHistoryRecord:
-        self._workspace_service.require_membership(
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        if self._authorization_gate is not None:
+            self._authorization_gate.require(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                permission=EnterprisePermission.REWRITE_EXECUTE,
+            )
+        else:
+            self._workspace_service.require_membership(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
 
         voice_analysis_binding = (
             VoiceRewriteAnalysisBinding.from_snapshot(voice_analysis_snapshot)

@@ -40,6 +40,12 @@ from app.v2.services.rewrite_history_service import (
 from app.v2.services.single_rewrite_observability import (
     SingleRewriteObservability,
 )
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
+)
 from app.v2.services.workspace_service import (
     WorkspaceService,
 )
@@ -74,6 +80,7 @@ class WorkspaceRewriteService:
         claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
         claim_lock_validator: (ClaimLockValidator | None) = None,
         observability: SingleRewriteObservability | None = None,
+        authorization_gate: WorkspaceAuthorizationGate | None = None,
         duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
         self._workspace_service = workspace_service
@@ -81,6 +88,7 @@ class WorkspaceRewriteService:
         self._workflow = workflow
         self._quota_admission = quota_admission
         self._observability = observability
+        self._authorization_gate = authorization_gate
         self._duration_clock = duration_clock
         self._claim_lock_preparation_service = (
             claim_lock_preparation_service or ClaimLockPreparationService()
@@ -104,10 +112,17 @@ class WorkspaceRewriteService:
     ) -> WorkspaceRewriteResult:
         started_at = self._duration_clock()
 
-        self._workspace_service.require_membership(
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+        if self._authorization_gate is not None:
+            self._authorization_gate.require(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                permission=EnterprisePermission.REWRITE_EXECUTE,
+            )
+        else:
+            self._workspace_service.require_membership(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
 
         claim_lock_preparation = self._claim_lock_preparation_service.prepare(
             text=request.text,

@@ -450,6 +450,7 @@ class V2Services:
         self.long_document_audit = LongDocumentAuditService(
             workspace_service=self.workspace,
             repository=(long_document_audit_repository),
+            authorization_gate=self.workspace_authorization,
         )
 
         if resolved_persistence.backend is PersistenceBackend.MEMORY:
@@ -504,6 +505,7 @@ class V2Services:
             audit_service=(self.long_document_audit),
             long_document_quota_admission=(long_document_quota_admission),
             observability=(self.long_document_observability),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.rewrite = WorkspaceRewriteService(
@@ -513,6 +515,7 @@ class V2Services:
             quota_admission=(single_rewrite_quota_admission),
             claim_lock_preparation_service=(self.claim_lock_preparation),
             observability=(self.single_rewrite_observability),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.multi_candidate = MultiCandidateWorkspaceRewriteService(
@@ -526,6 +529,7 @@ class V2Services:
             voice_provider=resolved_voice_provider,
             claim_lock_preparation_service=(self.claim_lock_preparation),
             observability=(self.multi_candidate_observability),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.voice_rewrite = None
