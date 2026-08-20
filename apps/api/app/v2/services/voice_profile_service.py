@@ -27,9 +27,6 @@ from app.v2.services.voice_sample_fingerprint import (
 from app.v2.services.workspace_authorization_gate import (
     WorkspaceAuthorizationGate,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
-)
 
 
 class VoiceProfileLifecycleError(ValueError):
@@ -40,12 +37,10 @@ class VoiceProfileService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         profiles: VoiceProfileRepository,
         analyzer: VoiceDNAAnalyzer | None = None,
-        authorization_gate: WorkspaceAuthorizationGate | None = None,
+        authorization_gate: WorkspaceAuthorizationGate,
     ) -> None:
-        self._workspace_service = workspace_service
         self._profiles = profiles
         self._analyzer = analyzer if analyzer is not None else VoiceDNAAnalyzer()
         self._authorization_gate = authorization_gate
@@ -289,17 +284,10 @@ class VoiceProfileService:
         user_id: str,
         permission: EnterprisePermission,
     ) -> None:
-        if self._authorization_gate is not None:
-            self._authorization_gate.require(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                permission=permission,
-            )
-            return
-
-        self._workspace_service.require_membership(
+        self._authorization_gate.require(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=permission,
         )
 
     def _get_profile(

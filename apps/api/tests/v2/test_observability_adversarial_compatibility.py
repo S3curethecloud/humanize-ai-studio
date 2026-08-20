@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -255,10 +256,10 @@ def test_analytics_api_fails_closed_on_truncation(
         )
 
     services.workspace_analytics = WorkspaceAnalyticsQueryService(
-        workspace_service=(services.workspace),
         repository=repository,
         aggregator=(WorkspaceAnalyticsAggregator()),
         event_limit=2,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     monkeypatch.setattr(

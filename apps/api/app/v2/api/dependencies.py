@@ -376,14 +376,12 @@ class V2Services:
         )
 
         self.history = RewriteHistoryService(
-            workspace_service=self.workspace,
             history=repositories.history,
             voice_audit_authenticator=(voice_audit_authenticator),
             authorization_gate=self.workspace_authorization,
         )
 
         self.voice_profiles = VoiceProfileService(
-            workspace_service=self.workspace,
             profiles=repositories.voice_profiles,
             authorization_gate=self.workspace_authorization,
         )
@@ -449,7 +447,6 @@ class V2Services:
             raise RuntimeError("Unsupported long-document persistence backend.")
 
         self.long_document_audit = LongDocumentAuditService(
-            workspace_service=self.workspace,
             repository=(long_document_audit_repository),
             authorization_gate=self.workspace_authorization,
         )
@@ -473,7 +470,6 @@ class V2Services:
         )
 
         self.workspace_analytics = WorkspaceAnalyticsQueryService(
-            workspace_service=self.workspace,
             repository=observability_repository,
             aggregator=(WorkspaceAnalyticsAggregator()),
             authorization_gate=self.workspace_authorization,
@@ -492,7 +488,6 @@ class V2Services:
         )
 
         self.long_document = LongDocumentWorkspaceRewriteService(
-            workspace_service=self.workspace,
             claim_lock_preparation_service=(self.claim_lock_preparation),
             structure_detector=(DocumentStructureDetector()),
             planner=SectionRewritePlanner(),
@@ -510,7 +505,6 @@ class V2Services:
         )
 
         self.rewrite = WorkspaceRewriteService(
-            workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
             quota_admission=(single_rewrite_quota_admission),
@@ -520,7 +514,6 @@ class V2Services:
         )
 
         self.multi_candidate = MultiCandidateWorkspaceRewriteService(
-            workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
             multi_candidate_quota_admission=(

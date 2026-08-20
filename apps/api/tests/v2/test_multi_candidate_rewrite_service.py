@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 from app.domain.models import (
     EditorialQualityDecision,
     EditorialQualityResult,
@@ -138,8 +139,8 @@ def _services() -> tuple[
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     return (
@@ -174,9 +175,9 @@ def test_multi_candidate_service_generates_requested_count() -> None:
     )
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=workflow,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     result = service.execute(
@@ -211,9 +212,9 @@ def test_selected_candidate_matches_rank_one() -> None:
     )
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=workflow,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     result = service.execute(
@@ -241,9 +242,9 @@ def test_selected_response_is_persisted_as_legacy_history_result() -> None:
     )
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=workflow,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     result = service.execute(
@@ -270,9 +271,9 @@ def test_candidate_audit_is_persisted_with_history() -> None:
     )
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=workflow,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     result = service.execute(
@@ -299,9 +300,9 @@ def test_selected_claim_lock_validation_matches_selected_control() -> None:
     )
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=workflow,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     result = service.execute(
@@ -341,9 +342,9 @@ def test_multi_candidate_service_keeps_original_request_tone_for_history() -> No
     request = _request()
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=workflow,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     result = service.execute(

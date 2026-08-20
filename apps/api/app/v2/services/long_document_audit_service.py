@@ -22,9 +22,6 @@ from app.v2.domain.enterprise_rbac import (
 from app.v2.services.workspace_authorization_gate import (
     WorkspaceAuthorizationGate,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
-)
 
 
 class LongDocumentAuditIntegrityError(RuntimeError):
@@ -35,11 +32,9 @@ class LongDocumentAuditService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         repository: LongDocumentAuditRepository,
-        authorization_gate: WorkspaceAuthorizationGate | None = None,
+        authorization_gate: WorkspaceAuthorizationGate,
     ) -> None:
-        self._workspace_service = workspace_service
         self._repository = repository
         self._authorization_gate = authorization_gate
 
@@ -51,17 +46,11 @@ class LongDocumentAuditService:
         evaluation: LongDocumentControlEvaluation,
         reconstruction: DocumentReconstruction,
     ) -> LongDocumentAuditRecord:
-        if self._authorization_gate is not None:
-            self._authorization_gate.require(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                permission=EnterprisePermission.REWRITE_EXECUTE,
-            )
-        else:
-            self._workspace_service.require_membership(
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+        self._authorization_gate.require(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=EnterprisePermission.REWRITE_EXECUTE,
+        )
 
         self._require_validated_artifact_linkage(
             evaluation=evaluation,
@@ -106,17 +95,11 @@ class LongDocumentAuditService:
         user_id: str,
         audit_id: str,
     ) -> LongDocumentAuditRecord | None:
-        if self._authorization_gate is not None:
-            self._authorization_gate.require(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                permission=EnterprisePermission.AUDIT_READ,
-            )
-        else:
-            self._workspace_service.require_membership(
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+        self._authorization_gate.require(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=EnterprisePermission.AUDIT_READ,
+        )
 
         record = self._repository.get(audit_id)
 
@@ -135,17 +118,11 @@ class LongDocumentAuditService:
         LongDocumentAuditRecord,
         ...,
     ]:
-        if self._authorization_gate is not None:
-            self._authorization_gate.require(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                permission=EnterprisePermission.AUDIT_READ,
-            )
-        else:
-            self._workspace_service.require_membership(
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+        self._authorization_gate.require(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=EnterprisePermission.AUDIT_READ,
+        )
 
         return self._repository.list_for_workspace(
             workspace_id=workspace_id,

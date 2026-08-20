@@ -33,21 +33,16 @@ from app.v2.domain.enterprise_rbac import (
 from app.v2.services.workspace_authorization_gate import (
     WorkspaceAuthorizationGate,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
-)
 
 
 class RewriteHistoryService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         history: RewriteHistoryRepository,
         voice_audit_authenticator: VoiceAuditAuthenticator | None = None,
-        authorization_gate: WorkspaceAuthorizationGate | None = None,
+        authorization_gate: WorkspaceAuthorizationGate,
     ) -> None:
-        self._workspace_service = workspace_service
         self._history = history
         self._voice_audit_authenticator = voice_audit_authenticator
         self._authorization_gate = authorization_gate
@@ -67,17 +62,11 @@ class RewriteHistoryService:
         claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None,
         candidate_audit_snapshot: CandidateAuditSnapshot | None = None,
     ) -> RewriteHistoryRecord:
-        if self._authorization_gate is not None:
-            self._authorization_gate.require(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                permission=EnterprisePermission.REWRITE_EXECUTE,
-            )
-        else:
-            self._workspace_service.require_membership(
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+        self._authorization_gate.require(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=EnterprisePermission.REWRITE_EXECUTE,
+        )
 
         voice_analysis_binding = (
             VoiceRewriteAnalysisBinding.from_snapshot(voice_analysis_snapshot)
@@ -142,17 +131,11 @@ class RewriteHistoryService:
         user_id: str,
         limit: int = 50,
     ) -> tuple[RewriteHistoryRecord, ...]:
-        if self._authorization_gate is not None:
-            self._authorization_gate.require(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                permission=EnterprisePermission.HISTORY_READ,
-            )
-        else:
-            self._workspace_service.require_membership(
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+        self._authorization_gate.require(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=EnterprisePermission.HISTORY_READ,
+        )
 
         records = self._history.list_for_workspace(
             workspace_id=workspace_id,

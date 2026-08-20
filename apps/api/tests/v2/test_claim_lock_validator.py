@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 from app.domain.models import (
     RewriteRequest,
 )
@@ -322,15 +323,15 @@ def _build_workspace_rewrite_service(
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history_repository,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     rewrite_service = WorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=RewriteWorkflow(),
         claim_lock_validator=validator,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     user = workspace_service.create_user(

@@ -52,9 +52,6 @@ from app.v2.domain.enterprise_rbac import (
 from app.v2.services.workspace_authorization_gate import (
     WorkspaceAuthorizationGate,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
-)
 
 
 @dataclass(frozen=True)
@@ -69,7 +66,6 @@ class LongDocumentWorkspaceRewriteService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         claim_lock_preparation_service: ClaimLockPreparationService,
         structure_detector: DocumentStructureDetector,
         long_document_quota_admission: (
@@ -81,10 +77,9 @@ class LongDocumentWorkspaceRewriteService:
         reconstructor: DocumentReconstructor,
         audit_service: LongDocumentAuditService,
         observability: LongDocumentObservability | None = None,
-        authorization_gate: WorkspaceAuthorizationGate | None = None,
+        authorization_gate: WorkspaceAuthorizationGate,
         duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
-        self._workspace_service = workspace_service
         self._claim_lock_preparation_service = claim_lock_preparation_service
         self._structure_detector = structure_detector
         self._long_document_quota_admission = (
@@ -113,17 +108,11 @@ class LongDocumentWorkspaceRewriteService:
     ) -> LongDocumentWorkspaceRewriteResult:
         started_at = self._duration_clock()
 
-        if self._authorization_gate is not None:
-            self._authorization_gate.require(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                permission=EnterprisePermission.REWRITE_EXECUTE,
-            )
-        else:
-            self._workspace_service.require_membership(
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+        self._authorization_gate.require(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=EnterprisePermission.REWRITE_EXECUTE,
+        )
 
         claim_lock_preparation = self._claim_lock_preparation_service.prepare(
             text=request.text,

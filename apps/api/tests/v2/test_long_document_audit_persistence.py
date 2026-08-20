@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import (
+    allow_all_workspace_authorization_gate,
+    deny_all_workspace_authorization_gate,
+)
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -209,8 +213,8 @@ def test_service_persists_exact_a_to_f_artifacts() -> None:
     evaluation, reconstruction = _artifacts()
 
     record = LongDocumentAuditService(
-        workspace_service=workspace_service,
         repository=repository,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     ).record(
         workspace_id=workspace_id,
         user_id=user_id,
@@ -235,8 +239,8 @@ def test_service_persists_control_evidence_without_rerun() -> None:
     evaluation, reconstruction = _artifacts()
 
     record = LongDocumentAuditService(
-        workspace_service=workspace_service,
         repository=(InMemoryLongDocumentAuditRepository()),
+        authorization_gate=allow_all_workspace_authorization_gate(),
     ).record(
         workspace_id=workspace_id,
         user_id=user_id,
@@ -260,11 +264,11 @@ def test_service_requires_workspace_membership() -> None:
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="permission_not_granted",
     ):
         LongDocumentAuditService(
-            workspace_service=workspace_service,
             repository=(InMemoryLongDocumentAuditRepository()),
+            authorization_gate=deny_all_workspace_authorization_gate(),
         ).record(
             workspace_id=workspace_id,
             user_id="user_intruder",
@@ -294,8 +298,8 @@ def test_v1_failure_evidence_blocks_persistence() -> None:
         match="authoritative V1 failures",
     ):
         LongDocumentAuditService(
-            workspace_service=workspace_service,
             repository=(InMemoryLongDocumentAuditRepository()),
+            authorization_gate=allow_all_workspace_authorization_gate(),
         ).record(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -328,8 +332,8 @@ def test_mismatched_reconstruction_structure_fails() -> None:
         match="structure must match",
     ):
         LongDocumentAuditService(
-            workspace_service=workspace_service,
             repository=(InMemoryLongDocumentAuditRepository()),
+            authorization_gate=allow_all_workspace_authorization_gate(),
         ).record(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -367,8 +371,8 @@ def test_mismatched_reconstruction_results_fail() -> None:
         match="results must match",
     ):
         LongDocumentAuditService(
-            workspace_service=workspace_service,
             repository=(InMemoryLongDocumentAuditRepository()),
+            authorization_gate=allow_all_workspace_authorization_gate(),
         ).record(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -532,8 +536,8 @@ def test_service_get_is_workspace_scoped() -> None:
     evaluation, reconstruction = _artifacts()
 
     service = LongDocumentAuditService(
-        workspace_service=workspace_service,
         repository=repository,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     record = service.record(
@@ -569,8 +573,8 @@ def test_service_does_not_mutate_validated_artifacts() -> None:
     reconstruction_before = reconstruction.model_dump(mode="json")
 
     LongDocumentAuditService(
-        workspace_service=workspace_service,
         repository=(InMemoryLongDocumentAuditRepository()),
+        authorization_gate=allow_all_workspace_authorization_gate(),
     ).record(
         workspace_id=workspace_id,
         user_id=user_id,

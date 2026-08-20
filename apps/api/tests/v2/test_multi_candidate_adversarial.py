@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 from dataclasses import dataclass
 
 import pytest
@@ -199,8 +200,8 @@ def _harness(
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     workflow = ScenarioWorkflow(
@@ -208,9 +209,9 @@ def _harness(
     )
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=workflow,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     user = workspace_service.create_user(

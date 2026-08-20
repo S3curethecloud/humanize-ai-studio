@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 import pytest
 from pydantic import ValidationError
 
@@ -213,14 +214,14 @@ def test_workspace_rewrite_records_claim_lock_audit_evidence() -> None:
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history_repository,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     rewrite_service = WorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=RewriteWorkflow(),
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     user = workspace_service.create_user(
@@ -269,14 +270,14 @@ def test_empty_claim_lock_preparation_keeps_history_audit_absent() -> None:
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history_repository,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     rewrite_service = WorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=RewriteWorkflow(),
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     user = workspace_service.create_user(
