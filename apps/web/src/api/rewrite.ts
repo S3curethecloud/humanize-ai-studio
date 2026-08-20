@@ -93,15 +93,25 @@ export interface RewriteRequest {
 }
 
 export async function submitRewrite(
+  workspaceId: string,
+  userId: string,
   request: RewriteRequest
 ): Promise<RewriteResponse> {
-  const response = await fetch("/api/v1/rewrites", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(request)
-  });
+  const response = await fetch(
+    `/api/v2/workspaces/${encodeURIComponent(
+      workspaceId
+    )}/rewrites`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        rewrite: request
+      })
+    }
+  );
 
   if (!response.ok) {
     let detail = `Rewrite failed with status ${response.status}.`;
@@ -121,5 +131,9 @@ export async function submitRewrite(
     throw new Error(detail);
   }
 
-  return (await response.json()) as RewriteResponse;
+  const payload = (await response.json()) as {
+    rewrite: RewriteResponse;
+  };
+
+  return payload.rewrite;
 }

@@ -16,9 +16,14 @@ import {
   EnterpriseShell
 } from "./layout/EnterpriseShell";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import AuditPage from "./pages/AuditPage";
 import DashboardPage from "./pages/DashboardPage";
+import DocumentsPage from "./pages/DocumentsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import QuotasPage from "./pages/QuotasPage";
 import RewriteStudioPage from "./pages/RewriteStudioPage";
+import VoiceDnaPage from "./pages/VoiceDnaPage";
+import WorkspacePage from "./pages/WorkspacePage";
 
 function resolveRoute(): AppRoute {
   return routeFromHash(
@@ -73,10 +78,44 @@ export default function App() {
       />
     );
   } else if (activeRoute === "rewrite") {
-    page = <RewriteStudioPage />;
+    page = (
+      <RewriteStudioPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "documents") {
+    page = (
+      <DocumentsPage
+        accessContext={accessContext}
+      />
+    );
   } else if (activeRoute === "analytics") {
     page = (
       <AnalyticsPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "audit") {
+    page = (
+      <AuditPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "voice-dna") {
+    page = (
+      <VoiceDnaPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "workspace") {
+    page = (
+      <WorkspacePage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "quotas") {
+    page = (
+      <QuotasPage
         accessContext={accessContext}
       />
     );

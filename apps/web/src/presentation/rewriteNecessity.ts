@@ -25,7 +25,7 @@ const DECISION_PRESENTATIONS: Record<
     label: "No rewrite needed",
     headline: "Your original wording was preserved",
     explanation:
-      "The text was already clear and did not require AI reconstruction.",
+      "The text was already clear and did not require provider reconstruction.",
     badge: "Original preserved",
     tone: "success"
   },
@@ -33,7 +33,7 @@ const DECISION_PRESENTATIONS: Record<
     label: "Light cleanup applied",
     headline: "Only localized edits were needed",
     explanation:
-      "A few formulaic or unnecessary phrases were cleaned up without invoking the AI provider.",
+      "A few formulaic or unnecessary phrases were cleaned up without invoking the configured rewrite provider.",
     badge: "Zero-token edit",
     tone: "information"
   },
@@ -41,8 +41,8 @@ const DECISION_PRESENTATIONS: Record<
     label: "Full rewrite applied",
     headline: "Broader structural improvement was needed",
     explanation:
-      "The text required more substantial reconstruction, so the configured AI provider was used.",
-    badge: "AI provider used",
+      "The text required more substantial reconstruction, so the configured rewrite provider was used.",
+    badge: "Provider used",
     tone: "emphasis"
   }
 };

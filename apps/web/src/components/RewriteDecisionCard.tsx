@@ -12,6 +12,11 @@ export function RewriteDecisionCard({
     response.rewrite_necessity
   );
 
+  const executionBadge =
+    response.rewrite_necessity.decision === "full_rewrite"
+      ? response.provider_execution.actual_provider_name
+      : presentation.badge;
+
   return (
     <section
       className={`decision-card decision-card--${presentation.tone}`}
@@ -26,7 +31,7 @@ export function RewriteDecisionCard({
         </div>
 
         <span className="decision-badge">
-          {presentation.badge}
+          {executionBadge}
         </span>
       </div>
 

@@ -860,3 +860,14 @@ select {
     min-height: auto;
   }
 }
+
+/* Long governed evidence identifiers must remain inside metric boundaries. */
+.enterprise-analytics-metric {
+  min-width: 0;
+}
+
+.enterprise-analytics-metric strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

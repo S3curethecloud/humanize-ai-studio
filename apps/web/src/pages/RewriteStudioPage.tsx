@@ -10,6 +10,9 @@ import {
   type RewriteRequest,
   type RewriteResponse
 } from "../api/rewrite";
+import type {
+  EnterpriseAccessContextState
+} from "../app/useEnterpriseAccessContext";
 import { RewriteAuditDetails } from "../components/RewriteAuditDetails";
 import { RewriteDecisionCard } from "../components/RewriteDecisionCard";
 
@@ -74,7 +77,13 @@ function requestsMatch(
   );
 }
 
-export default function RewriteStudioPage() {
+interface RewriteStudioPageProps {
+  accessContext: EnterpriseAccessContextState;
+}
+
+export default function RewriteStudioPage({
+  accessContext
+}: RewriteStudioPageProps) {
   const [request, setRequest] =
     useState<RewriteRequest>(INITIAL_REQUEST);
   const [submittedResult, setSubmittedResult] =
@@ -113,8 +122,22 @@ export default function RewriteStudioPage() {
 
     const requestSnapshot = cloneRequest(request);
 
+    if (
+      accessContext.status !== "connected" ||
+      accessContext.workspaceId === null ||
+      accessContext.userId === null
+    ) {
+      setError(
+        "Canonical workspace access context is required before rewriting."
+      );
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const result = await submitRewrite(
+        accessContext.workspaceId,
+        accessContext.userId,
         requestSnapshot
       );
 

@@ -60,14 +60,14 @@ export const ROUTE_METADATA: Record<
     group: "Work",
     description:
       "Governed document workspace and version-oriented content operations.",
-    availability: "planned"
+    availability: "available"
   },
   "voice-dna": {
     label: "Voice DNA",
     group: "Work",
     description:
       "Voice profile governance, analysis, and controlled writing guidance.",
-    availability: "planned"
+    availability: "available"
   },
   "claim-lock": {
     label: "Claim Lock",
@@ -81,7 +81,7 @@ export const ROUTE_METADATA: Record<
     group: "Governance",
     description:
       "Workspace-scoped evidence and governed activity review.",
-    availability: "planned"
+    availability: "available"
   },
   evalops: {
     label: "EvalOps",
@@ -116,7 +116,7 @@ export const ROUTE_METADATA: Record<
     group: "Admin",
     description:
       "Enterprise workspace configuration and governance context.",
-    availability: "planned"
+    availability: "available"
   },
   members: {
     label: "Members & Roles",
@@ -130,7 +130,7 @@ export const ROUTE_METADATA: Record<
     group: "Admin",
     description:
       "Workspace quota policy, limits, and governed administration.",
-    availability: "planned"
+    availability: "available"
   },
   policies: {
     label: "Policies",
@@ -170,12 +170,12 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "documents",
         label: "Documents",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "voice-dna",
         label: "Voice DNA",
-        availability: "planned"
+        availability: "available"
       }
     ]
   },
@@ -190,7 +190,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "audit",
         label: "Audit",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "evalops",
@@ -225,7 +225,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "workspace",
         label: "Workspace",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "members",
@@ -235,7 +235,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "quotas",
         label: "Quotas",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "policies",
