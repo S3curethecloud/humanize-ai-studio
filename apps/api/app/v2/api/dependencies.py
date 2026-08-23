@@ -63,6 +63,9 @@ from app.v2.services.enterprise_authorization_runtime_factory import (
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
 )
+from app.v2.services.enterprise_membership_admin_service import (
+    EnterpriseMembershipAdminService,
+)
 from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
     EnterpriseMultiCandidateQuotaAdmissionService,
 )
@@ -305,6 +308,15 @@ class V2Services:
                     .authorization_resolver
                 ),
             )
+        )
+
+        self.membership_admin = EnterpriseMembershipAdminService(
+            memberships=(
+                self.enterprise_authorization.memberships
+            ),
+            authorization_resolver=(
+                self.enterprise_authorization.authorization_resolver
+            ),
         )
 
         quota_limits = (

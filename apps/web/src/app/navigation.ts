@@ -123,7 +123,7 @@ export const ROUTE_METADATA: Record<
     group: "Admin",
     description:
       "Membership lifecycle and role-based access administration.",
-    availability: "planned"
+    availability: "available"
   },
   quotas: {
     label: "Quotas",
@@ -230,7 +230,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "members",
         label: "Members & Roles",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "quotas",

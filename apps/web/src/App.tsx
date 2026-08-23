@@ -24,6 +24,7 @@ import QuotasPage from "./pages/QuotasPage";
 import RewriteStudioPage from "./pages/RewriteStudioPage";
 import VoiceDnaPage from "./pages/VoiceDnaPage";
 import WorkspacePage from "./pages/WorkspacePage";
+import MembersPage from "./pages/MembersPage";
 
 function resolveRoute(): AppRoute {
   return routeFromHash(
@@ -116,6 +117,12 @@ export default function App() {
   } else if (activeRoute === "quotas") {
     page = (
       <QuotasPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "members") {
+    page = (
+      <MembersPage
         accessContext={accessContext}
       />
     );

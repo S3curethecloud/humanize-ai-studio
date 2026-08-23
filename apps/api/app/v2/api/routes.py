@@ -27,6 +27,9 @@ from app.v2.domain.enterprise_rbac import (
     EnterprisePermission,
     permissions_for_role,
 )
+from app.v2.domain.enterprise_workspace import (
+    EnterpriseMembershipStatus,
+)
 from app.v2.domain.eval_ops import (
     EvaluationRunOutcome,
 )
@@ -58,6 +61,10 @@ from app.v2.services.enterprise_authorization_resolver import (
 )
 from app.v2.services.enterprise_authorization_service import (
     AuthorizationDecision,
+)
+from app.v2.services.enterprise_membership_admin_service import (
+    EnterpriseMembershipAdministrationError,
+    MembershipAdministrationFailureReason,
 )
 from app.v2.services.enterprise_quota_admin_service import (
     EnterpriseQuotaAdministrationError,
@@ -102,9 +109,11 @@ __all__ = [
 
 
 from app.v2.api.models import (
+    AddEnterpriseMemberRequest,
     AnalyzeVoiceProfileRequest,
     ArchiveVoiceProfileRequest,
     CandidateControlRewriteEvidence,
+    ChangeEnterpriseMemberRoleRequest,
     ClaimLockRewriteEvidence,
     CreateEnterpriseQuotaLimitRequest,
     CreateUserRequest,
@@ -112,14 +121,19 @@ from app.v2.api.models import (
     CreateVoiceProfileRequest,
     CreateWorkspaceRequest,
     CreateWorkspaceResponse,
+    EnterpriseMemberLifecycleRequest,
+    EnterpriseMemberListResponse,
+    EnterpriseMemberResponse,
     EnterpriseQuotaLimitListResponse,
     EnterpriseQuotaLimitResponse,
     EnterpriseWorkspaceAccessContextResponse,
+    EnterpriseWorkspaceOwnershipTransferResponse,
     EvaluationEvidenceListResponse,
     EvaluationEvidenceResponse,
     MultiCandidateRewriteEvidence,
     RoutingEvidenceListResponse,
     RoutingEvidenceResponse,
+    TransferEnterpriseWorkspaceOwnershipRequest,
     UpdateVoiceProfileRequest,
     VoiceProfileAnalysisResponse,
     VoiceProfileListResponse,
@@ -170,6 +184,69 @@ def _quota_admin_http_exception(
 
     raise RuntimeError(
         "unsupported enterprise quota administration failure reason"
+    )
+
+
+def _membership_admin_http_exception(
+    exc: EnterpriseMembershipAdministrationError,
+) -> HTTPException:
+    if exc.reason in {
+        MembershipAdministrationFailureReason.AUTHORIZATION_RESOLUTION_FAILED,
+        MembershipAdministrationFailureReason.AUTHORIZATION_DENIED,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=exc.reason.value,
+        )
+
+    if exc.reason in {
+        MembershipAdministrationFailureReason.TARGET_NOT_FOUND,
+        MembershipAdministrationFailureReason.TARGET_SCOPE_MISMATCH,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=exc.reason.value,
+        )
+
+    if exc.reason in {
+        MembershipAdministrationFailureReason.DUPLICATE_CURRENT_MEMBERSHIP,
+        MembershipAdministrationFailureReason.NEW_MEMBERSHIP_ID_REQUIRED,
+        MembershipAdministrationFailureReason.OWNER_ROLE_REQUIRES_TRANSFER,
+        MembershipAdministrationFailureReason.OWNER_LIFECYCLE_PROTECTED,
+        MembershipAdministrationFailureReason.MEMBERSHIP_REMOVED,
+        MembershipAdministrationFailureReason.MEMBERSHIP_NOT_ACTIVE,
+        MembershipAdministrationFailureReason.MEMBERSHIP_NOT_SUSPENDED,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.reason.value,
+        )
+
+    if (
+        exc.reason
+        is MembershipAdministrationFailureReason.TRANSACTION_REQUIRED
+    ):
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=exc.reason.value,
+        )
+
+    raise RuntimeError(
+        "unsupported enterprise membership administration failure reason"
+    )
+
+
+def _enterprise_member_response(
+    membership,
+) -> EnterpriseMemberResponse:
+    return EnterpriseMemberResponse(
+        membership=membership,
+        effective_permissions=tuple(
+            sorted(
+                permissions_for_role(membership.role),
+                key=lambda permission: permission.value,
+            )
+        ),
     )
 
 
@@ -400,6 +477,217 @@ def get_enterprise_workspace_access_context(
         workspace=workspace,
         membership=membership,
         permissions=permissions,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/members",
+    response_model=EnterpriseMemberListResponse,
+)
+def list_enterprise_members(
+    workspace_id: str,
+    actor_user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+    membership_status: EnterpriseMembershipStatus | None = Query(
+        default=None,
+        alias="status",
+    ),
+    limit: int = Query(
+        default=200,
+        ge=1,
+        le=1000,
+    ),
+) -> EnterpriseMemberListResponse:
+    try:
+        memberships = services.membership_admin.list_members(
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+            status=membership_status,
+            limit=limit,
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+
+    return EnterpriseMemberListResponse(
+        workspace_id=workspace_id,
+        members=tuple(
+            _enterprise_member_response(membership)
+            for membership in memberships
+        ),
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/members/{user_id}",
+    response_model=EnterpriseMemberResponse,
+)
+def get_enterprise_member(
+    workspace_id: str,
+    user_id: str,
+    actor_user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> EnterpriseMemberResponse:
+    try:
+        membership = services.membership_admin.get_member(
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+
+    return _enterprise_member_response(membership)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/members",
+    response_model=EnterpriseMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_enterprise_member(
+    workspace_id: str,
+    request: AddEnterpriseMemberRequest,
+) -> EnterpriseMemberResponse:
+    runtime = services.enterprise_authorization
+    workspace = runtime.workspaces.get(workspace_id)
+
+    if workspace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="workspace_not_found",
+        )
+
+    try:
+        membership = services.membership_admin.add_member(
+            actor_user_id=request.actor_user_id,
+            organization_id=workspace.organization_id,
+            workspace_id=workspace_id,
+            membership_id=request.membership_id,
+            user_id=request.user_id,
+            role=request.role,
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return _enterprise_member_response(membership)
+
+
+@router.patch(
+    "/workspaces/{workspace_id}/members/{user_id}/role",
+    response_model=EnterpriseMemberResponse,
+)
+def change_enterprise_member_role(
+    workspace_id: str,
+    user_id: str,
+    request: ChangeEnterpriseMemberRoleRequest,
+) -> EnterpriseMemberResponse:
+    try:
+        membership = services.membership_admin.change_role(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            target_user_id=user_id,
+            role=request.role,
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+
+    return _enterprise_member_response(membership)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/members/{user_id}/suspend",
+    response_model=EnterpriseMemberResponse,
+)
+def suspend_enterprise_member(
+    workspace_id: str,
+    user_id: str,
+    request: EnterpriseMemberLifecycleRequest,
+) -> EnterpriseMemberResponse:
+    try:
+        membership = services.membership_admin.suspend_member(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            target_user_id=user_id,
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+
+    return _enterprise_member_response(membership)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/members/{user_id}/reactivate",
+    response_model=EnterpriseMemberResponse,
+)
+def reactivate_enterprise_member(
+    workspace_id: str,
+    user_id: str,
+    request: EnterpriseMemberLifecycleRequest,
+) -> EnterpriseMemberResponse:
+    try:
+        membership = services.membership_admin.reactivate_member(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            target_user_id=user_id,
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+
+    return _enterprise_member_response(membership)
+
+
+@router.delete(
+    "/workspaces/{workspace_id}/members/{user_id}",
+    response_model=EnterpriseMemberResponse,
+)
+def remove_enterprise_member(
+    workspace_id: str,
+    user_id: str,
+    request: EnterpriseMemberLifecycleRequest,
+) -> EnterpriseMemberResponse:
+    try:
+        membership = services.membership_admin.remove_member(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            target_user_id=user_id,
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+
+    return _enterprise_member_response(membership)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/ownership-transfer",
+    response_model=EnterpriseWorkspaceOwnershipTransferResponse,
+)
+def transfer_enterprise_workspace_ownership(
+    workspace_id: str,
+    request: TransferEnterpriseWorkspaceOwnershipRequest,
+) -> EnterpriseWorkspaceOwnershipTransferResponse:
+    try:
+        previous_owner, new_owner = (
+            services.membership_admin.transfer_ownership(
+                actor_user_id=request.actor_user_id,
+                workspace_id=workspace_id,
+                target_user_id=request.target_user_id,
+            )
+        )
+    except EnterpriseMembershipAdministrationError as exc:
+        raise _membership_admin_http_exception(exc) from exc
+
+    return EnterpriseWorkspaceOwnershipTransferResponse(
+        previous_owner=previous_owner,
+        new_owner=new_owner,
     )
 
 
