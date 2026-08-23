@@ -45,7 +45,12 @@ def test_no_change_skips_provider_and_records_zero_tokens() -> None:
 
     source = "The policy engine evaluates every proposed tool call before execution."
 
-    result = workflow.execute(RewriteRequest(text=source))
+    result = workflow.execute(
+        RewriteRequest(
+            text=source,
+            intensity="light_edit",
+        )
+    )
 
     assert provider.call_count == 0
     assert result.rewritten_text == source
@@ -66,7 +71,10 @@ def test_minimal_edit_skips_provider_and_records_change() -> None:
     workflow = RewriteWorkflow(provider=provider)
 
     result = workflow.execute(
-        RewriteRequest(text=("Furthermore, the migration completed in 30 days."))
+        RewriteRequest(
+            text="Furthermore, the migration completed in 30 days.",
+            intensity="light_edit",
+        )
     )
 
     assert provider.call_count == 0
@@ -123,7 +131,11 @@ def test_bypass_output_still_runs_fact_verification() -> None:
 
     result = workflow.execute(
         RewriteRequest(
-            text=("Additionally, the service processed 12,000 requests with 99.9% availability.")
+            text=(
+                "Additionally, the service processed "
+                "12,000 requests with 99.9% availability."
+            ),
+            intensity="light_edit",
         )
     )
 

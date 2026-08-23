@@ -135,7 +135,7 @@ def _create_profile(
         display_name="Owner",
     )
 
-    workspace = services.workspace.create_workspace(
+    workspace = services.workspace_provisioning.create_workspace(
         user_id=user.user_id,
         name="Voice Workspace",
     )
@@ -303,7 +303,7 @@ def test_unauthorized_profile_fails_before_provider_generation() -> None:
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="membership_not_found",
     ):
         voice_rewrite.execute(
             workspace_id=workspace_id,

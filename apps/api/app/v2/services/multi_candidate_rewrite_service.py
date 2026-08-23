@@ -81,8 +81,11 @@ from app.v2.services.voice_aware_provider import (
 from app.v2.services.voice_rewrite_guidance import (
     VoiceRewriteGuidanceService,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
 )
 
 
@@ -118,7 +121,6 @@ class MultiCandidateWorkspaceRewriteService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         history_service: RewriteHistoryService,
         workflow: RewriteWorkflowExecutor,
         multi_candidate_quota_admission: (
@@ -133,14 +135,15 @@ class MultiCandidateWorkspaceRewriteService:
         ranker: CandidateRanker | None = None,
         audit_builder: CandidateAuditBuilder | None = None,
         observability: MultiCandidateObservability | None = None,
+        authorization_gate: WorkspaceAuthorizationGate,
         duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
-        self._workspace_service = workspace_service
         self._history_service = history_service
         self._multi_candidate_quota_admission = (
             multi_candidate_quota_admission
         )
         self._observability = observability
+        self._authorization_gate = authorization_gate
         self._duration_clock = duration_clock
         self._voice_guidance_service = voice_guidance_service
         self._voice_provider = voice_provider
@@ -178,9 +181,10 @@ class MultiCandidateWorkspaceRewriteService:
     ) -> MultiCandidateWorkspaceRewriteResult:
         started_at = self._duration_clock()
 
-        self._workspace_service.require_membership(
+        self._authorization_gate.require(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.REWRITE_EXECUTE,
         )
 
         plan = self._planner.plan(

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import (
+    allow_all_workspace_authorization_gate,
+    deny_all_workspace_authorization_gate,
+)
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -147,6 +151,7 @@ def _multi_service(
         EnterpriseMultiCandidateQuotaAdmissionService | MagicMock | None
     ),
     workspace_service: MagicMock | None = None,
+    authorization_gate=None,
     history_service: MagicMock | None = None,
     workflow: MagicMock | None = None,
     observability: MagicMock | None = None,
@@ -170,7 +175,6 @@ def _multi_service(
     )
 
     service = MultiCandidateWorkspaceRewriteService(
-        workspace_service=workspace,
         history_service=history,
         workflow=resolved_workflow,
         multi_candidate_quota_admission=quota_admission,
@@ -180,6 +184,10 @@ def _multi_service(
         ),
         voice_guidance_service=voice_guidance_service,
         voice_provider=voice_provider,
+        authorization_gate=(
+            authorization_gate
+            or allow_all_workspace_authorization_gate()
+        ),
     )
 
     return service, workspace, history, resolved_workflow
@@ -293,18 +301,16 @@ def test_non_member_fails_before_quota_admission() -> None:
     workspace = MagicMock(
         spec=WorkspaceService,
     )
-    workspace.require_membership.side_effect = PermissionError(
-        "not a member"
-    )
 
     service, _workspace, _history, workflow = _multi_service(
         quota_admission=admission,
         workspace_service=workspace,
+            authorization_gate=deny_all_workspace_authorization_gate(),
     )
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="permission_not_granted",
     ):
         service.execute(
             workspace_id="workspace_test",

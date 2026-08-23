@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import (
+    allow_all_workspace_authorization_gate,
+    deny_all_workspace_authorization_gate,
+)
 from datetime import UTC, datetime, timedelta
 from inspect import signature
 from types import SimpleNamespace
@@ -156,6 +160,7 @@ def _long_service(
         EnterpriseLongDocumentQuotaAdmissionService | MagicMock | None
     ),
     workspace_service: MagicMock | None = None,
+    authorization_gate=None,
     preparation: MagicMock | None = None,
     structure_detector: MagicMock | None = None,
     planner: MagicMock | None = None,
@@ -215,7 +220,6 @@ def _long_service(
     section_planner.plan.return_value = plan
 
     service = LongDocumentWorkspaceRewriteService(
-        workspace_service=workspace,
         claim_lock_preparation_service=claim_lock_preparation,
         structure_detector=detector,
         planner=section_planner,
@@ -225,6 +229,10 @@ def _long_service(
         audit_service=long_document_audit,
         long_document_quota_admission=quota_admission,
         observability=observability,
+        authorization_gate=(
+            authorization_gate
+            or allow_all_workspace_authorization_gate()
+        ),
     )
 
     return (
@@ -323,9 +331,6 @@ def test_non_member_fails_before_long_document_quota() -> None:
     workspace = MagicMock(
         spec=WorkspaceService,
     )
-    workspace.require_membership.side_effect = PermissionError(
-        "not a member"
-    )
 
     (
         service,
@@ -339,11 +344,12 @@ def test_non_member_fails_before_long_document_quota() -> None:
     ) = _long_service(
         quota_admission=admission,
         workspace_service=workspace,
+            authorization_gate=deny_all_workspace_authorization_gate(),
     )
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="permission_not_granted",
     ):
         service.execute(
             workspace_id="workspace_test",

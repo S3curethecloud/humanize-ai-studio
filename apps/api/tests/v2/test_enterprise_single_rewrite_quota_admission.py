@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import (
+    allow_all_workspace_authorization_gate,
+    deny_all_workspace_authorization_gate,
+)
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from inspect import signature
@@ -145,6 +149,7 @@ def _workspace_service(
     history_service: MagicMock | None = None,
     observability: MagicMock | None = None,
     workspace_service: MagicMock | None = None,
+    authorization_gate=None,
 ) -> tuple[
     WorkspaceRewriteService,
     MagicMock,
@@ -162,11 +167,14 @@ def _workspace_service(
     )
 
     service = WorkspaceRewriteService(
-        workspace_service=resolved_workspace,
         history_service=resolved_history,
         workflow=resolved_workflow,
         quota_admission=quota_admission,  # type: ignore[arg-type]
         observability=observability,
+        authorization_gate=(
+            authorization_gate
+            or allow_all_workspace_authorization_gate()
+        ),
     )
 
     return (
@@ -362,18 +370,16 @@ def test_non_member_fails_before_quota_resolution() -> None:
         spec=EnterpriseSingleRewriteQuotaAdmissionService,
     )
     workspace = MagicMock(spec=WorkspaceService)
-    workspace.require_membership.side_effect = PermissionError(
-        "not a member"
-    )
 
     service, _workspace, _history, workflow = _workspace_service(
         quota_admission=admission,
         workspace_service=workspace,
+            authorization_gate=deny_all_workspace_authorization_gate(),
     )
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="permission_not_granted",
     ):
         service.execute(
             workspace_id="workspace_test",

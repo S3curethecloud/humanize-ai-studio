@@ -10,8 +10,11 @@ from app.v2.domain.observability import (
 from app.v2.services.workspace_analytics_aggregator import (
     WorkspaceAnalyticsAggregator,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
 )
 
 
@@ -37,17 +40,17 @@ class WorkspaceAnalyticsQueryService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         repository: WorkspaceAnalyticsEventReader,
         aggregator: WorkspaceAnalyticsAggregator,
+        authorization_gate: WorkspaceAuthorizationGate,
         event_limit: int = 1000,
     ) -> None:
         if event_limit < 1:
             raise ValueError("workspace analytics event_limit must be at least 1")
 
-        self._workspace_service = workspace_service
         self._repository = repository
         self._aggregator = aggregator
+        self._authorization_gate = authorization_gate
         self._event_limit = event_limit
 
     def query(
@@ -58,9 +61,10 @@ class WorkspaceAnalyticsQueryService:
         period_start: datetime,
         period_end: datetime,
     ) -> WorkspaceAnalyticsSnapshot:
-        self._workspace_service.require_membership(
+        self._authorization_gate.require(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.ANALYTICS_READ,
         )
 
         events = self._repository.list_for_workspace(

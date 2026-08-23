@@ -100,7 +100,7 @@ def test_metrics_expose_request_and_rewrite_counters(
             "document_type": "general",
             "audience": "general audience",
             "tone": "natural and clear",
-            "intensity": "natural_rewrite",
+            "intensity": "light_edit",
             "preserve_numbers": True,
             "preserve_dates": True,
         },

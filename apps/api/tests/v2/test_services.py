@@ -1,3 +1,9 @@
+from app.v2.domain.enterprise_rbac import EnterprisePermission
+from tests.v2.test_support_authorization_gate import (
+    allow_all_workspace_authorization_gate,
+    deny_all_workspace_authorization_gate,
+    deny_permission_workspace_authorization_gate,
+)
 from app.domain.models import (
     DocumentType,
     EditorialQualityDecision,
@@ -25,7 +31,10 @@ from app.v2.services.workspace_service import (
 )
 
 
-def _build_services() -> tuple[
+def _build_services(
+    *,
+    authorization_gate=None,
+) -> tuple[
     WorkspaceService,
     RewriteHistoryService,
 ]:
@@ -41,8 +50,11 @@ def _build_services() -> tuple[
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history,
+        authorization_gate=(
+            authorization_gate
+            or allow_all_workspace_authorization_gate()
+        ),
     )
 
     return (
@@ -152,7 +164,11 @@ def test_workspace_creation_adds_owner_membership() -> None:
 
 
 def test_rewrite_history_requires_membership() -> None:
-    workspace_service, history_service = _build_services()
+    workspace_service, history_service = _build_services(
+        authorization_gate=deny_permission_workspace_authorization_gate(
+            EnterprisePermission.HISTORY_READ
+        ),
+    )
 
     user = workspace_service.create_user(
         email="owner@example.com",
@@ -205,7 +221,9 @@ def test_workspace_history_is_returned() -> None:
 
 
 def test_non_member_cannot_read_history() -> None:
-    workspace_service, history_service = _build_services()
+    workspace_service, history_service = _build_services(
+        authorization_gate=deny_all_workspace_authorization_gate(),
+    )
 
     owner = workspace_service.create_user(
         email="owner@example.com",
@@ -253,14 +271,14 @@ def test_workspace_rewrite_executes_and_records_history() -> None:
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history_repository,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     rewrite_service = WorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=RewriteWorkflow(),
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     user = workspace_service.create_user(
@@ -311,14 +329,14 @@ def test_workspace_rewrite_rejects_non_member() -> None:
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history_repository,
+        authorization_gate=deny_all_workspace_authorization_gate(),
     )
 
     rewrite_service = WorkspaceRewriteService(
-        workspace_service=workspace_service,
         history_service=history_service,
         workflow=RewriteWorkflow(),
+        authorization_gate=deny_all_workspace_authorization_gate(),
     )
 
     owner = workspace_service.create_user(

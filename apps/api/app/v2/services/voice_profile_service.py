@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
 from app.v2.domain.models import (
     VoiceAnalysisProvenance,
     VoiceAnalysisState,
@@ -21,8 +24,8 @@ from app.v2.services.voice_dna_analyzer import (
 from app.v2.services.voice_sample_fingerprint import (
     voice_sample_fingerprint,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
 )
 
 
@@ -34,13 +37,13 @@ class VoiceProfileService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         profiles: VoiceProfileRepository,
         analyzer: VoiceDNAAnalyzer | None = None,
+        authorization_gate: WorkspaceAuthorizationGate,
     ) -> None:
-        self._workspace_service = workspace_service
         self._profiles = profiles
         self._analyzer = analyzer if analyzer is not None else VoiceDNAAnalyzer()
+        self._authorization_gate = authorization_gate
 
     def create_profile(
         self,
@@ -55,9 +58,10 @@ class VoiceProfileService:
         ] = (),
         style_attributes: (VoiceStyleAttributes | None) = None,
     ) -> VoiceProfileRecord:
-        self._workspace_service.require_membership(
+        self._require_permission(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.VOICE_MANAGE,
         )
 
         now = datetime.now(UTC)
@@ -85,22 +89,34 @@ class VoiceProfileService:
         user_id: str,
         profile_id: str,
     ) -> VoiceProfileRecord:
-        self._workspace_service.require_membership(
+        self._require_permission(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.VOICE_READ,
         )
 
-        profile = self._profiles.get(profile_id)
-
-        if profile is None:
-            raise ValueError(f"Unknown voice profile: {profile_id}")
-
-        self._require_profile_workspace(
-            profile=profile,
+        return self._get_profile(
             workspace_id=workspace_id,
+            profile_id=profile_id,
         )
 
-        return profile
+    def get_profile_for_use(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        profile_id: str,
+    ) -> VoiceProfileRecord:
+        self._require_permission(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=EnterprisePermission.VOICE_USE,
+        )
+
+        return self._get_profile(
+            workspace_id=workspace_id,
+            profile_id=profile_id,
+        )
 
     def list_profiles(
         self,
@@ -110,9 +126,10 @@ class VoiceProfileService:
         profile_status: VoiceProfileStatus | None = None,
         limit: int = 50,
     ) -> tuple[VoiceProfileRecord, ...]:
-        self._workspace_service.require_membership(
+        self._require_permission(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.VOICE_READ,
         )
 
         return self._profiles.list_for_workspace(
@@ -128,19 +145,15 @@ class VoiceProfileService:
         user_id: str,
         profile: VoiceProfileRecord,
     ) -> VoiceProfileRecord:
-        self._workspace_service.require_membership(
+        self._require_permission(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.VOICE_MANAGE,
         )
 
-        existing = self._profiles.get(profile.profile_id)
-
-        if existing is None:
-            raise ValueError(f"Unknown voice profile: {profile.profile_id}")
-
-        self._require_profile_workspace(
-            profile=existing,
+        existing = self._get_profile(
             workspace_id=workspace_id,
+            profile_id=profile.profile_id,
         )
 
         self._require_profile_workspace(
@@ -188,9 +201,14 @@ class VoiceProfileService:
         user_id: str,
         profile_id: str,
     ) -> VoiceProfileAnalysisResult:
-        profile = self.get_profile(
+        self._require_permission(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.VOICE_MANAGE,
+        )
+
+        profile = self._get_profile(
+            workspace_id=workspace_id,
             profile_id=profile_id,
         )
 
@@ -236,9 +254,14 @@ class VoiceProfileService:
         user_id: str,
         profile_id: str,
     ) -> VoiceProfileRecord:
-        profile = self.get_profile(
+        self._require_permission(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.VOICE_MANAGE,
+        )
+
+        profile = self._get_profile(
+            workspace_id=workspace_id,
             profile_id=profile_id,
         )
 
@@ -253,6 +276,37 @@ class VoiceProfileService:
         )
 
         return self._profiles.update(archived)
+
+    def _require_permission(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        permission: EnterprisePermission,
+    ) -> None:
+        self._authorization_gate.require(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            permission=permission,
+        )
+
+    def _get_profile(
+        self,
+        *,
+        workspace_id: str,
+        profile_id: str,
+    ) -> VoiceProfileRecord:
+        profile = self._profiles.get(profile_id)
+
+        if profile is None:
+            raise ValueError(f"Unknown voice profile: {profile_id}")
+
+        self._require_profile_workspace(
+            profile=profile,
+            workspace_id=workspace_id,
+        )
+
+        return profile
 
     def _require_active_profile(
         self,

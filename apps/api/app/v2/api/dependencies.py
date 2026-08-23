@@ -63,6 +63,9 @@ from app.v2.services.enterprise_authorization_runtime_factory import (
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
 )
+from app.v2.services.enterprise_membership_admin_service import (
+    EnterpriseMembershipAdminService,
+)
 from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
     EnterpriseMultiCandidateQuotaAdmissionService,
 )
@@ -151,6 +154,15 @@ from app.v2.services.workspace_analytics_query_service import (
 )
 from app.v2.services.workspace_rewrite_service import (
     WorkspaceRewriteService,
+)
+from app.v2.repositories.workspace_authority_provisioning import (
+    build_atomic_workspace_authority_provisioner,
+)
+from app.v2.services.canonical_workspace_provisioning_service import (
+    CanonicalWorkspaceProvisioningService,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
 )
 from app.v2.services.workspace_service import (
     WorkspaceService,
@@ -289,6 +301,24 @@ class V2Services:
             )
         )
 
+        self.workspace_authorization = (
+            WorkspaceAuthorizationGate(
+                resolver=(
+                    self.enterprise_authorization
+                    .authorization_resolver
+                ),
+            )
+        )
+
+        self.membership_admin = EnterpriseMembershipAdminService(
+            memberships=(
+                self.enterprise_authorization.memberships
+            ),
+            authorization_resolver=(
+                self.enterprise_authorization.authorization_resolver
+            ),
+        )
+
         quota_limits = (
             quota_runtime.limits
             if quota_runtime is not None
@@ -324,6 +354,32 @@ class V2Services:
         if resolved_persistence.backend is PersistenceBackend.SQLITE:
             unit_of_work = build_unit_of_work(resolved_persistence)
 
+        self.workspace_authority_provisioner = (
+            build_atomic_workspace_authority_provisioner(
+                persistence_settings=resolved_persistence,
+                legacy_workspaces=repositories.workspaces,
+                legacy_memberships=repositories.memberships,
+                enterprise_organizations=(
+                    self.enterprise_authorization.organizations
+                ),
+                enterprise_workspaces=(
+                    self.enterprise_authorization.workspaces
+                ),
+                enterprise_memberships=(
+                    self.enterprise_authorization.memberships
+                ),
+            )
+        )
+
+        self.workspace_provisioning = (
+            CanonicalWorkspaceProvisioningService(
+                users=repositories.users,
+                provisioner=(
+                    self.workspace_authority_provisioner
+                ),
+            )
+        )
+
         self.workspace = WorkspaceService(
             users=repositories.users,
             workspaces=repositories.workspaces,
@@ -332,14 +388,14 @@ class V2Services:
         )
 
         self.history = RewriteHistoryService(
-            workspace_service=self.workspace,
             history=repositories.history,
             voice_audit_authenticator=(voice_audit_authenticator),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.voice_profiles = VoiceProfileService(
-            workspace_service=self.workspace,
             profiles=repositories.voice_profiles,
+            authorization_gate=self.workspace_authorization,
         )
 
         self.voice_rewrite_guidance = VoiceRewriteGuidanceService(
@@ -403,8 +459,8 @@ class V2Services:
             raise RuntimeError("Unsupported long-document persistence backend.")
 
         self.long_document_audit = LongDocumentAuditService(
-            workspace_service=self.workspace,
             repository=(long_document_audit_repository),
+            authorization_gate=self.workspace_authorization,
         )
 
         if resolved_persistence.backend is PersistenceBackend.MEMORY:
@@ -426,9 +482,9 @@ class V2Services:
         )
 
         self.workspace_analytics = WorkspaceAnalyticsQueryService(
-            workspace_service=self.workspace,
             repository=observability_repository,
             aggregator=(WorkspaceAnalyticsAggregator()),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.single_rewrite_observability = SingleRewriteObservability(
@@ -444,7 +500,6 @@ class V2Services:
         )
 
         self.long_document = LongDocumentWorkspaceRewriteService(
-            workspace_service=self.workspace,
             claim_lock_preparation_service=(self.claim_lock_preparation),
             structure_detector=(DocumentStructureDetector()),
             planner=SectionRewritePlanner(),
@@ -458,19 +513,19 @@ class V2Services:
             audit_service=(self.long_document_audit),
             long_document_quota_admission=(long_document_quota_admission),
             observability=(self.long_document_observability),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.rewrite = WorkspaceRewriteService(
-            workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
             quota_admission=(single_rewrite_quota_admission),
             claim_lock_preparation_service=(self.claim_lock_preparation),
             observability=(self.single_rewrite_observability),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.multi_candidate = MultiCandidateWorkspaceRewriteService(
-            workspace_service=self.workspace,
             history_service=self.history,
             workflow=resolved_workflow,
             multi_candidate_quota_admission=(
@@ -480,6 +535,7 @@ class V2Services:
             voice_provider=resolved_voice_provider,
             claim_lock_preparation_service=(self.claim_lock_preparation),
             observability=(self.multi_candidate_observability),
+            authorization_gate=self.workspace_authorization,
         )
 
         self.voice_rewrite = None

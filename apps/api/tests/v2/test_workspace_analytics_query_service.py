@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.v2.test_support_authorization_gate import (
+    allow_all_workspace_authorization_gate,
+    deny_all_workspace_authorization_gate,
+)
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -124,16 +128,18 @@ def _service(
     *,
     event_limit: int = 1000,
     include_membership: bool = True,
+    authorization_gate=None,
 ) -> WorkspaceAnalyticsQueryService:
     return WorkspaceAnalyticsQueryService(
-        workspace_service=_workspace_service(
-            include_membership=include_membership,
-        ),
         repository=repository,
         aggregator=WorkspaceAnalyticsAggregator(
             clock=lambda: GENERATED_AT,
         ),
         event_limit=event_limit,
+        authorization_gate=(
+            authorization_gate
+            or allow_all_workspace_authorization_gate()
+        ),
     )
 
 
@@ -203,11 +209,12 @@ def test_membership_is_required_before_query() -> None:
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="permission_not_granted",
     ):
         _service(
             repository,
             include_membership=False,
+            authorization_gate=deny_all_workspace_authorization_gate(),
         ).query(
             workspace_id="workspace_test",
             user_id="user_test",
@@ -254,12 +261,12 @@ def test_queries_with_limit_plus_one_sentinel() -> None:
     repository = _RepositorySpy()
 
     service = WorkspaceAnalyticsQueryService(
-        workspace_service=_workspace_service(),
         repository=repository,
         aggregator=WorkspaceAnalyticsAggregator(
             clock=lambda: GENERATED_AT,
         ),
         event_limit=25,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     service.query(

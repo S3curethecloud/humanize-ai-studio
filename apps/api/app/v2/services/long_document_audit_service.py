@@ -16,8 +16,11 @@ from app.v2.repositories.long_document_audit import (
 from app.v2.services.long_document_control_evaluator import (
     LongDocumentControlEvaluation,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
 )
 
 
@@ -29,11 +32,11 @@ class LongDocumentAuditService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         repository: LongDocumentAuditRepository,
+        authorization_gate: WorkspaceAuthorizationGate,
     ) -> None:
-        self._workspace_service = workspace_service
         self._repository = repository
+        self._authorization_gate = authorization_gate
 
     def record(
         self,
@@ -43,9 +46,10 @@ class LongDocumentAuditService:
         evaluation: LongDocumentControlEvaluation,
         reconstruction: DocumentReconstruction,
     ) -> LongDocumentAuditRecord:
-        self._workspace_service.require_membership(
+        self._authorization_gate.require(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.REWRITE_EXECUTE,
         )
 
         self._require_validated_artifact_linkage(
@@ -91,9 +95,10 @@ class LongDocumentAuditService:
         user_id: str,
         audit_id: str,
     ) -> LongDocumentAuditRecord | None:
-        self._workspace_service.require_membership(
+        self._authorization_gate.require(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.AUDIT_READ,
         )
 
         record = self._repository.get(audit_id)
@@ -113,9 +118,10 @@ class LongDocumentAuditService:
         LongDocumentAuditRecord,
         ...,
     ]:
-        self._workspace_service.require_membership(
+        self._authorization_gate.require(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.AUDIT_READ,
         )
 
         return self._repository.list_for_workspace(

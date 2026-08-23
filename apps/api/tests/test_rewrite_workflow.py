@@ -16,7 +16,7 @@ def test_rewrite_removes_formulaic_language_and_preserves_number() -> None:
             "document_type": "professional_email",
             "audience": "executive stakeholder",
             "tone": "direct and professional",
-            "intensity": "natural_rewrite",
+            "intensity": "light_edit",
         },
     )
 

@@ -25,3 +25,6 @@ evals/reports/*.json
 .dev.vars
 cloudflare/types/
 worker-configuration.d.ts
+
+# Local V2 runtime persistence
+apps/api/.runtime/

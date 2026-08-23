@@ -1,3 +1,4 @@
+from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 from pathlib import Path
 
 from app.v2.domain.models import (
@@ -35,8 +36,8 @@ def _build_services(
     )
 
     history_service = RewriteHistoryService(
-        workspace_service=workspace_service,
         history=history,
+        authorization_gate=allow_all_workspace_authorization_gate(),
     )
 
     return (

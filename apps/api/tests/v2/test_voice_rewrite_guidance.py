@@ -86,7 +86,7 @@ def _create_profile(
         display_name="Owner",
     )
 
-    workspace = services.workspace.create_workspace(
+    workspace = services.workspace_provisioning.create_workspace(
         user_id=user.user_id,
         name="Voice Workspace",
     )
@@ -248,7 +248,7 @@ def test_guidance_selection_preserves_workspace_authorization() -> None:
 
     with pytest.raises(
         PermissionError,
-        match="not a member",
+        match="membership_not_found",
     ):
         services.voice_rewrite_guidance.build_guidance(
             workspace_id=workspace_id,

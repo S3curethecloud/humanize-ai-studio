@@ -40,8 +40,11 @@ from app.v2.services.rewrite_history_service import (
 from app.v2.services.single_rewrite_observability import (
     SingleRewriteObservability,
 )
-from app.v2.services.workspace_service import (
-    WorkspaceService,
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.services.workspace_authorization_gate import (
+    WorkspaceAuthorizationGate,
 )
 from app.workflows.rewrite_workflow import (
     RewriteWorkflow,
@@ -67,20 +70,20 @@ class WorkspaceRewriteService:
     def __init__(
         self,
         *,
-        workspace_service: WorkspaceService,
         history_service: RewriteHistoryService,
         workflow: RewriteWorkflow,
         quota_admission: (EnterpriseSingleRewriteQuotaAdmissionService | None) = None,
         claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
         claim_lock_validator: (ClaimLockValidator | None) = None,
         observability: SingleRewriteObservability | None = None,
+        authorization_gate: WorkspaceAuthorizationGate,
         duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
-        self._workspace_service = workspace_service
         self._history_service = history_service
         self._workflow = workflow
         self._quota_admission = quota_admission
         self._observability = observability
+        self._authorization_gate = authorization_gate
         self._duration_clock = duration_clock
         self._claim_lock_preparation_service = (
             claim_lock_preparation_service or ClaimLockPreparationService()
@@ -104,9 +107,10 @@ class WorkspaceRewriteService:
     ) -> WorkspaceRewriteResult:
         started_at = self._duration_clock()
 
-        self._workspace_service.require_membership(
+        self._authorization_gate.require(
             workspace_id=workspace_id,
             user_id=user_id,
+            permission=EnterprisePermission.REWRITE_EXECUTE,
         )
 
         claim_lock_preparation = self._claim_lock_preparation_service.prepare(

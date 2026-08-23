@@ -26,6 +26,15 @@ from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaWindow,
     EnterpriseWorkspaceQuotaLimit,
 )
+from app.v2.domain.enterprise_rbac import (
+    EnterprisePermission,
+)
+from app.v2.domain.enterprise_workspace import (
+    EnterpriseMembershipStatus,
+    EnterpriseWorkspace,
+    EnterpriseWorkspaceMembership,
+    EnterpriseWorkspaceRole,
+)
 from app.v2.domain.long_document_audit import (
     LongDocumentAuditRecord,
 )
@@ -128,6 +137,86 @@ class EnterpriseQuotaLimitListResponse(BaseModel):
         EnterpriseWorkspaceQuotaLimit,
         ...,
     ]
+
+
+class EnterpriseWorkspaceAccessContextResponse(BaseModel):
+    workspace: EnterpriseWorkspace
+    membership: EnterpriseWorkspaceMembership
+    permissions: tuple[
+        EnterprisePermission,
+        ...,
+    ]
+
+
+class EnterpriseMemberResponse(BaseModel):
+    membership: EnterpriseWorkspaceMembership
+    effective_permissions: tuple[
+        EnterprisePermission,
+        ...,
+    ]
+
+
+class EnterpriseMemberListResponse(BaseModel):
+    workspace_id: str
+    members: tuple[
+        EnterpriseMemberResponse,
+        ...,
+    ]
+
+
+class AddEnterpriseMemberRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    membership_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    role: EnterpriseWorkspaceRole
+
+
+class ChangeEnterpriseMemberRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    role: EnterpriseWorkspaceRole
+
+
+class EnterpriseMemberLifecycleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+
+class TransferEnterpriseWorkspaceOwnershipRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    target_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+
+class EnterpriseWorkspaceOwnershipTransferResponse(BaseModel):
+    previous_owner: EnterpriseWorkspaceMembership
+    new_owner: EnterpriseWorkspaceMembership
 
 
 class WorkspaceRewriteRequest(BaseModel):
