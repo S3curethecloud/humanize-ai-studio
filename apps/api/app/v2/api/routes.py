@@ -19,6 +19,9 @@ from app.v2.api.evidence_access import (
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_claim_lock_policy import (
+    EnterpriseClaimLockPolicyStatus,
+)
 from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseWorkspaceQuotaLimit,
@@ -61,6 +64,10 @@ from app.v2.services.enterprise_authorization_resolver import (
 )
 from app.v2.services.enterprise_authorization_service import (
     AuthorizationDecision,
+)
+from app.v2.services.enterprise_claim_lock_admin_service import (
+    ClaimLockAdministrationFailureReason,
+    EnterpriseClaimLockAdministrationError,
 )
 from app.v2.services.enterprise_membership_admin_service import (
     EnterpriseMembershipAdministrationError,
@@ -115,7 +122,11 @@ from app.v2.api.models import (
     CandidateControlRewriteEvidence,
     ChangeEnterpriseMemberRoleRequest,
     ClaimLockRewriteEvidence,
+    CreateEnterpriseClaimLockPolicyRequest,
     CreateEnterpriseQuotaLimitRequest,
+    EnterpriseClaimLockPolicyLifecycleRequest,
+    EnterpriseClaimLockPolicyResponse,
+    EnterpriseClaimLockProtectedTermInput,
     CreateUserRequest,
     CreateUserResponse,
     CreateVoiceProfileRequest,
@@ -134,6 +145,7 @@ from app.v2.api.models import (
     RoutingEvidenceListResponse,
     RoutingEvidenceResponse,
     TransferEnterpriseWorkspaceOwnershipRequest,
+    UpdateEnterpriseClaimLockPolicyRequest,
     UpdateVoiceProfileRequest,
     VoiceProfileAnalysisResponse,
     VoiceProfileListResponse,
@@ -150,6 +162,89 @@ router = APIRouter(
     prefix="/api/v2",
     tags=["v2"],
 )
+
+
+def _claim_lock_admin_http_exception(
+    exc: EnterpriseClaimLockAdministrationError,
+) -> HTTPException:
+    reason = exc.reason
+
+    if reason in {
+        ClaimLockAdministrationFailureReason
+        .AUTHORIZATION_RESOLUTION_FAILED,
+        ClaimLockAdministrationFailureReason
+        .AUTHORIZATION_DENIED,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=reason.value,
+        )
+
+    if reason in {
+        ClaimLockAdministrationFailureReason.POLICY_NOT_FOUND,
+        ClaimLockAdministrationFailureReason.POLICY_SCOPE_MISMATCH,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                ClaimLockAdministrationFailureReason
+                .POLICY_NOT_FOUND.value
+            ),
+        )
+
+    if reason in {
+        ClaimLockAdministrationFailureReason.POLICY_ALREADY_EXISTS,
+        ClaimLockAdministrationFailureReason.POLICY_ARCHIVED,
+        ClaimLockAdministrationFailureReason.POLICY_NOT_ACTIVE,
+        ClaimLockAdministrationFailureReason.POLICY_ALREADY_ACTIVE,
+        ClaimLockAdministrationFailureReason
+        .POLICY_ALREADY_DISABLED,
+        ClaimLockAdministrationFailureReason.REVISION_CONFLICT,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=reason.value,
+        )
+
+    if (
+        reason
+        is ClaimLockAdministrationFailureReason
+        .INVALID_WORKSPACE_TERM
+    ):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=reason.value,
+        )
+
+    if reason in {
+        ClaimLockAdministrationFailureReason.PERSISTENCE_REJECTED,
+        ClaimLockAdministrationFailureReason.TRANSACTION_REQUIRED,
+    }:
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=reason.value,
+        )
+
+    raise RuntimeError(
+        "unsupported enterprise claim lock "
+        "administration failure reason"
+    )
+
+
+def _claim_lock_admin_term_payloads(
+    terms: tuple[
+        EnterpriseClaimLockProtectedTermInput,
+        ...,
+    ],
+) -> tuple[dict[str, object], ...]:
+    return tuple(
+        {
+            "term_id": term.term_id,
+            "text": term.text,
+            "case_sensitive": term.case_sensitive,
+        }
+        for term in terms
+    )
 
 
 def _quota_admin_http_exception(
@@ -289,6 +384,158 @@ def create_workspace(
 
     return CreateWorkspaceResponse(
         workspace=workspace,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/claim-lock-policy",
+    response_model=EnterpriseClaimLockPolicyResponse,
+)
+def get_enterprise_claim_lock_policy(
+    workspace_id: str,
+    actor_user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> EnterpriseClaimLockPolicyResponse:
+    try:
+        policy = services.claim_lock_admin.get_policy(
+            actor_user_id=actor_user_id,
+            workspace_id=workspace_id,
+        )
+    except EnterpriseClaimLockAdministrationError as exc:
+        raise _claim_lock_admin_http_exception(exc) from exc
+
+    return EnterpriseClaimLockPolicyResponse(
+        policy=policy,
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/claim-lock-policy",
+    response_model=EnterpriseClaimLockPolicyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_enterprise_claim_lock_policy(
+    workspace_id: str,
+    request: CreateEnterpriseClaimLockPolicyRequest,
+) -> EnterpriseClaimLockPolicyResponse:
+    protected_terms = _claim_lock_admin_term_payloads(
+        request.protected_terms
+    )
+
+    try:
+        policy = services.claim_lock_admin.create_policy(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            policy_id=request.policy_id,
+            enforcement_mode=request.enforcement_mode,
+            protected_terms=protected_terms,
+            status=EnterpriseClaimLockPolicyStatus.ACTIVE,
+        )
+    except EnterpriseClaimLockAdministrationError as exc:
+        raise _claim_lock_admin_http_exception(exc) from exc
+
+    return EnterpriseClaimLockPolicyResponse(
+        policy=policy,
+    )
+
+
+@router.patch(
+    "/workspaces/{workspace_id}/claim-lock-policy",
+    response_model=EnterpriseClaimLockPolicyResponse,
+)
+def update_enterprise_claim_lock_policy(
+    workspace_id: str,
+    request: UpdateEnterpriseClaimLockPolicyRequest,
+) -> EnterpriseClaimLockPolicyResponse:
+    protected_terms = _claim_lock_admin_term_payloads(
+        request.protected_terms
+    )
+
+    try:
+        policy = services.claim_lock_admin.update_policy(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            policy_id=request.policy_id,
+            expected_revision=request.expected_revision,
+            enforcement_mode=request.enforcement_mode,
+            protected_terms=protected_terms,
+        )
+    except EnterpriseClaimLockAdministrationError as exc:
+        raise _claim_lock_admin_http_exception(exc) from exc
+
+    return EnterpriseClaimLockPolicyResponse(
+        policy=policy,
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/claim-lock-policy/enable",
+    response_model=EnterpriseClaimLockPolicyResponse,
+)
+def enable_enterprise_claim_lock_policy(
+    workspace_id: str,
+    request: EnterpriseClaimLockPolicyLifecycleRequest,
+) -> EnterpriseClaimLockPolicyResponse:
+    try:
+        policy = services.claim_lock_admin.enable_policy(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            policy_id=request.policy_id,
+            expected_revision=request.expected_revision,
+        )
+    except EnterpriseClaimLockAdministrationError as exc:
+        raise _claim_lock_admin_http_exception(exc) from exc
+
+    return EnterpriseClaimLockPolicyResponse(
+        policy=policy,
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/claim-lock-policy/disable",
+    response_model=EnterpriseClaimLockPolicyResponse,
+)
+def disable_enterprise_claim_lock_policy(
+    workspace_id: str,
+    request: EnterpriseClaimLockPolicyLifecycleRequest,
+) -> EnterpriseClaimLockPolicyResponse:
+    try:
+        policy = services.claim_lock_admin.disable_policy(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            policy_id=request.policy_id,
+            expected_revision=request.expected_revision,
+        )
+    except EnterpriseClaimLockAdministrationError as exc:
+        raise _claim_lock_admin_http_exception(exc) from exc
+
+    return EnterpriseClaimLockPolicyResponse(
+        policy=policy,
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/claim-lock-policy/archive",
+    response_model=EnterpriseClaimLockPolicyResponse,
+)
+def archive_enterprise_claim_lock_policy(
+    workspace_id: str,
+    request: EnterpriseClaimLockPolicyLifecycleRequest,
+) -> EnterpriseClaimLockPolicyResponse:
+    try:
+        policy = services.claim_lock_admin.archive_policy(
+            actor_user_id=request.actor_user_id,
+            workspace_id=workspace_id,
+            policy_id=request.policy_id,
+            expected_revision=request.expected_revision,
+        )
+    except EnterpriseClaimLockAdministrationError as exc:
+        raise _claim_lock_admin_http_exception(exc) from exc
+
+    return EnterpriseClaimLockPolicyResponse(
+        policy=policy,
     )
 
 
