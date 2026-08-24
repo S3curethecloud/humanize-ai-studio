@@ -18,6 +18,9 @@ from app.v2.config.provider_targets import (
 from app.v2.config.voice_audit_auth import (
     VoiceAuditAuthenticitySettings,
 )
+from app.v2.repositories.enterprise_claim_lock_policy_admin_mutations import (
+    build_enterprise_claim_lock_policy_admin_mutation_repository,
+)
 from app.v2.repositories.enterprise_quota_admin_mutations import (
     build_enterprise_quota_admin_mutation_repository,
 )
@@ -59,6 +62,12 @@ from app.v2.services.enterprise_authorization_runtime import (
 )
 from app.v2.services.enterprise_authorization_runtime_factory import (
     build_enterprise_authorization_runtime,
+)
+from app.v2.services.enterprise_claim_lock_admin_service import (
+    EnterpriseClaimLockAdminService,
+)
+from app.v2.services.enterprise_claim_lock_policy_repository_factory import (
+    build_enterprise_claim_lock_policy_repository,
 )
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
@@ -299,6 +308,32 @@ class V2Services:
             or build_enterprise_authorization_runtime(
                 resolved_persistence,
             )
+        )
+
+        self.enterprise_claim_lock_policies = (
+            build_enterprise_claim_lock_policy_repository(
+                resolved_persistence,
+            )
+        )
+
+        self.enterprise_claim_lock_policy_admin_mutations = (
+            build_enterprise_claim_lock_policy_admin_mutation_repository(
+                policies=self.enterprise_claim_lock_policies,
+                audit=self.enterprise_admin_audit.repository,
+            )
+        )
+
+        self.claim_lock_admin = EnterpriseClaimLockAdminService(
+            policies=self.enterprise_claim_lock_policies,
+            authorization_resolver=(
+                self.enterprise_authorization.authorization_resolver
+            ),
+            audit_recording=(
+                self.enterprise_admin_audit.recording
+            ),
+            atomic_mutations=(
+                self.enterprise_claim_lock_policy_admin_mutations
+            ),
         )
 
         self.workspace_authorization = (
