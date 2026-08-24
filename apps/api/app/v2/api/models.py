@@ -21,6 +21,9 @@ from app.v2.domain.candidate_ranking import (
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_claim_lock_policy import (
+    EnterpriseWorkspaceClaimLockPolicy,
+)
 from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseQuotaWindow,
@@ -106,6 +109,81 @@ class CreateUserResponse(BaseModel):
 
 class CreateWorkspaceResponse(BaseModel):
     workspace: WorkspaceRecord
+
+
+class EnterpriseClaimLockProtectedTermInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    term_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    text: str = Field(
+        min_length=1,
+        max_length=1000,
+    )
+    case_sensitive: bool = True
+
+
+class CreateEnterpriseClaimLockPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    policy_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    enforcement_mode: ClaimLockEnforcementMode
+    protected_terms: tuple[
+        EnterpriseClaimLockProtectedTermInput,
+        ...,
+    ] = ()
+
+
+class UpdateEnterpriseClaimLockPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    policy_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    expected_revision: int = Field(
+        ge=1,
+    )
+    enforcement_mode: ClaimLockEnforcementMode
+    protected_terms: tuple[
+        EnterpriseClaimLockProtectedTermInput,
+        ...,
+    ]
+
+
+class EnterpriseClaimLockPolicyLifecycleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor_user_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    policy_id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    expected_revision: int = Field(
+        ge=1,
+    )
+
+
+class EnterpriseClaimLockPolicyResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy: EnterpriseWorkspaceClaimLockPolicy
 
 
 class CreateEnterpriseQuotaLimitRequest(BaseModel):
