@@ -593,6 +593,43 @@ succeed.
 
 Otherwise it rolls back.
 
+## Enterprise Admin Audit Action Extension
+
+C3 implementation requires a bounded extension to the existing enterprise
+admin-audit action enum.
+
+The existing file authorized for modification is:
+
+`apps/api/app/v2/domain/enterprise_admin_audit.py`
+
+The existing `EnterpriseAdminAuditEvent` model and enterprise admin-audit
+repository architecture remain authoritative and must not be redesigned for
+Claim Lock.
+
+C3 authorizes exactly these additional `EnterpriseAdminAuditAction` values:
+
+```python
+CLAIM_LOCK_POLICY_CREATE = "claim_lock_policy_create"
+CLAIM_LOCK_POLICY_UPDATE = "claim_lock_policy_update"
+CLAIM_LOCK_POLICY_ENABLE = "claim_lock_policy_enable"
+CLAIM_LOCK_POLICY_DISABLE = "claim_lock_policy_disable"
+CLAIM_LOCK_POLICY_ARCHIVE = "claim_lock_policy_archive"
+```
+
+No additional Claim Lock policy audit action is authorized in C3.
+
+Quota audit actions must not be reused for Claim Lock operations.
+
+The following existing audit contracts remain unchanged:
+
+- `EnterpriseAdminAuditEvent`;
+- `EnterpriseAdminAuditOutcome`;
+- admin-audit target type and target identifier semantics;
+- admin-audit timestamp semantics;
+- admin-audit failure-reason semantics;
+- in-memory admin-audit repository behavior;
+- SQLite admin-audit repository behavior.
+
 ## Atomic Administration Mutation File
 
 The bounded atomic mutation implementation file is:
@@ -819,13 +856,28 @@ This test is mandatory.
 When C3 implementation is later authorized, the bounded implementation slice is:
 
 ```text
+EXISTING FILE AUTHORIZED FOR BOUNDED MODIFICATION:
+apps/api/app/v2/domain/enterprise_admin_audit.py
+
+NEW DOMAIN FILE:
 apps/api/app/v2/domain/enterprise_claim_lock_policy.py
+
+NEW REPOSITORY FILES:
 apps/api/app/v2/repositories/enterprise_claim_lock_policies.py
 apps/api/app/v2/repositories/enterprise_claim_lock_policy_admin_mutations.py
+
+NEW TEST FILES:
 apps/api/tests/v2/test_enterprise_claim_lock_policy_domain.py
 apps/api/tests/v2/test_enterprise_claim_lock_policy_repositories.py
 apps/api/tests/v2/test_enterprise_claim_lock_policy_admin_mutations.py
 ```
+
+The modification to
+`apps/api/app/v2/domain/enterprise_admin_audit.py`
+is restricted to adding the five frozen Claim Lock policy audit actions.
+
+C3 does not authorize redesign of the existing enterprise admin-audit event or
+repository contracts.
 
 C3 does not authorize changes to:
 
@@ -866,6 +918,11 @@ The V2.12-C3 domain and repository contract is frozen as follows:
 - SQLite mutation transaction: `BEGIN IMMEDIATE`
 - Atomic policy plus successful audit: REQUIRED
 - Separate atomic mutation repository: REQUIRED
+- Claim Lock enterprise admin-audit actions: REQUIRED
+- Authorized existing audit-domain modification: apps/api/app/v2/domain/enterprise_admin_audit.py
+- Frozen Claim Lock policy audit actions: CREATE / UPDATE / ENABLE / DISABLE / ARCHIVE
+- Enterprise admin-audit event redesign: FORBIDDEN
+- Enterprise admin-audit repository redesign: FORBIDDEN
 - Physical deletion: FORBIDDEN
 - Repository HTTP coupling: FORBIDDEN
 - UTC-normalized SQLite timestamps: REQUIRED
