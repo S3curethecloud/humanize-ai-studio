@@ -21,6 +21,12 @@ class EnterpriseAdminAuditAction(StrEnum):
     QUOTA_LIMIT_GET = "quota_limit_get"
     QUOTA_LIMIT_LIST = "quota_limit_list"
 
+    CLAIM_LOCK_POLICY_CREATE = "claim_lock_policy_create"
+    CLAIM_LOCK_POLICY_UPDATE = "claim_lock_policy_update"
+    CLAIM_LOCK_POLICY_ENABLE = "claim_lock_policy_enable"
+    CLAIM_LOCK_POLICY_DISABLE = "claim_lock_policy_disable"
+    CLAIM_LOCK_POLICY_ARCHIVE = "claim_lock_policy_archive"
+
 
 class EnterpriseAdminAuditOutcome(StrEnum):
     SUCCEEDED = "succeeded"
