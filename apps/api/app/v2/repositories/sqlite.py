@@ -15,6 +15,9 @@ from app.v2.domain.claim_lock import (
 from app.v2.domain.claim_lock_audit import (
     ClaimLockValidationAuditSnapshot,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     RewriteRecordStatus,
@@ -118,6 +121,7 @@ def initialize_database(
                 claim_lock_snapshot TEXT,
                 claim_lock_validation TEXT,
                 claim_lock_enforcement_mode TEXT,
+                claim_lock_workspace_policy TEXT,
                 candidate_set_id TEXT,
                 candidate_audit_snapshot TEXT,
                 selected_candidate_id TEXT,
@@ -241,6 +245,12 @@ def initialize_database(
         if "claim_lock_enforcement_mode" not in rewrite_history_columns:
             connection.execute(
                 "ALTER TABLE rewrite_history ADD COLUMN claim_lock_enforcement_mode TEXT"
+            )
+
+        if "claim_lock_workspace_policy" not in rewrite_history_columns:
+            connection.execute(
+                "ALTER TABLE rewrite_history "
+                "ADD COLUMN claim_lock_workspace_policy TEXT"
             )
 
         if "candidate_set_id" not in rewrite_history_columns:
@@ -573,6 +583,7 @@ class SQLiteRewriteHistoryRepository:
                     claim_lock_snapshot,
                     claim_lock_validation,
                     claim_lock_enforcement_mode,
+                    claim_lock_workspace_policy,
                     candidate_set_id,
                     candidate_audit_snapshot,
                     selected_candidate_id,
@@ -583,9 +594,9 @@ class SQLiteRewriteHistoryRepository:
                     created_at
                 )
                 VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -647,6 +658,16 @@ class SQLiteRewriteHistoryRepository:
                     (
                         record.claim_lock_enforcement_mode.value
                         if record.claim_lock_enforcement_mode is not None
+                        else None
+                    ),
+                    (
+                        json.dumps(
+                            record.claim_lock_workspace_policy.model_dump(
+                                mode="json"
+                            ),
+                            separators=(",", ":"),
+                        )
+                        if record.claim_lock_workspace_policy is not None
                         else None
                     ),
                     record.candidate_set_id,
@@ -767,6 +788,13 @@ class SQLiteRewriteHistoryRepository:
             claim_lock_enforcement_mode=(
                 ClaimLockEnforcementMode(row["claim_lock_enforcement_mode"])
                 if row["claim_lock_enforcement_mode"] is not None
+                else None
+            ),
+            claim_lock_workspace_policy=(
+                EnterpriseClaimLockWorkspacePolicyExecutionEvidence.model_validate(
+                    json.loads(row["claim_lock_workspace_policy"])
+                )
+                if row["claim_lock_workspace_policy"] is not None
                 else None
             ),
             candidate_set_id=row["candidate_set_id"],

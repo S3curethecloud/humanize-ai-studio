@@ -442,3 +442,275 @@ def test_historical_sqlite_history_without_claim_lock_remains_readable(
     assert loaded.claim_lock_snapshot is None
     assert loaded.claim_lock_validation is None
     assert loaded.claim_lock_enforcement_mode is None
+    assert loaded.claim_lock_workspace_policy is None
+
+
+def test_workspace_policy_history_evidence_survives_reopen_without_v23_tuple(
+    tmp_path: Path,
+) -> None:
+    import json
+    import sqlite3
+
+    from app.v2.domain.claim_lock import (
+        ClaimLockEnforcementMode,
+    )
+    from app.v2.domain.enterprise_claim_lock_runtime import (
+        EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+    )
+
+    database_path = (
+        tmp_path / "workspace-policy-history.db"
+    )
+
+    workspace_service, _ = _build_services(
+        database_path
+    )
+
+    user = workspace_service.create_user(
+        email="workspace-policy@example.com",
+        display_name="Workspace Policy Owner",
+    )
+
+    workspace = workspace_service.create_workspace(
+        user_id=user.user_id,
+        name="Workspace Policy Persistence",
+    )
+
+    evidence = (
+        EnterpriseClaimLockWorkspacePolicyExecutionEvidence(
+            policy_id="policy-sqlite-i8",
+            policy_revision=3,
+            enforcement_mode=(
+                ClaimLockEnforcementMode.STRICT
+            ),
+            applicable_term_ids=(),
+        )
+    )
+
+    base_record = _history_record(
+        rewrite_id="history-workspace-policy-i8",
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        trace_id="trace-workspace-policy-i8",
+    )
+
+    record = base_record.model_copy(
+        update={
+            "claim_lock_workspace_policy": evidence,
+        }
+    )
+
+    first = SQLiteRewriteHistoryRepository(
+        database_path
+    )
+
+    first.create(record)
+
+    connection = sqlite3.connect(database_path)
+
+    stored = connection.execute(
+        """
+        SELECT claim_lock_workspace_policy
+        FROM rewrite_history
+        WHERE rewrite_id = ?
+        """,
+        (record.rewrite_id,),
+    ).fetchone()
+
+    connection.close()
+
+    assert stored is not None
+    assert stored[0] is not None
+    assert json.loads(stored[0]) == evidence.model_dump(
+        mode="json"
+    )
+
+    reopened = SQLiteRewriteHistoryRepository(
+        database_path
+    )
+
+    loaded = reopened.get(record.rewrite_id)
+
+    assert loaded == record
+    assert loaded is not None
+
+    assert (
+        loaded.claim_lock_workspace_policy
+        == evidence
+    )
+
+    assert loaded.claim_lock_snapshot is None
+    assert loaded.claim_lock_validation is None
+    assert loaded.claim_lock_enforcement_mode is None
+
+
+def test_initialize_database_migrates_pre_i8_history_and_preserves_null_policy_evidence(
+    tmp_path: Path,
+) -> None:
+    import sqlite3
+
+    from app.v2.repositories.sqlite import (
+        SQLiteRewriteHistoryRepository,
+        initialize_database,
+    )
+
+    database_path = (
+        tmp_path / "pre-i8-history.db"
+    )
+
+    record = _history_record(
+        rewrite_id="history-pre-i8",
+        workspace_id="workspace-pre-i8",
+        user_id="user-pre-i8",
+        trace_id="trace-pre-i8",
+    )
+
+    connection = sqlite3.connect(database_path)
+
+    connection.execute(
+        """
+        CREATE TABLE rewrite_history (
+            rewrite_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            rewritten_text TEXT NOT NULL,
+            document_type TEXT NOT NULL,
+            audience TEXT NOT NULL,
+            tone TEXT NOT NULL,
+            intensity TEXT NOT NULL,
+            provider_name TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            prompt_version TEXT NOT NULL,
+            voice_profile_id TEXT,
+            voice_guidance_version TEXT,
+            voice_analysis_snapshot TEXT,
+            voice_analysis_binding TEXT,
+            voice_analysis_authenticity TEXT,
+            claim_lock_snapshot TEXT,
+            claim_lock_validation TEXT,
+            claim_lock_enforcement_mode TEXT,
+            candidate_set_id TEXT,
+            candidate_audit_snapshot TEXT,
+            selected_candidate_id TEXT,
+            fallback_used INTEGER NOT NULL,
+            verification_decision TEXT NOT NULL,
+            editorial_quality_decision TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        INSERT INTO rewrite_history (
+            rewrite_id,
+            workspace_id,
+            user_id,
+            trace_id,
+            source_text,
+            rewritten_text,
+            document_type,
+            audience,
+            tone,
+            intensity,
+            provider_name,
+            model_name,
+            prompt_version,
+            voice_profile_id,
+            voice_guidance_version,
+            voice_analysis_snapshot,
+            voice_analysis_binding,
+            voice_analysis_authenticity,
+            claim_lock_snapshot,
+            claim_lock_validation,
+            claim_lock_enforcement_mode,
+            candidate_set_id,
+            candidate_audit_snapshot,
+            selected_candidate_id,
+            fallback_used,
+            verification_decision,
+            editorial_quality_decision,
+            status,
+            created_at
+        )
+        VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )
+        """,
+        (
+            record.rewrite_id,
+            record.workspace_id,
+            record.user_id,
+            record.trace_id,
+            record.source_text,
+            record.rewritten_text,
+            record.document_type,
+            record.audience,
+            record.tone,
+            record.intensity,
+            record.provider_name,
+            record.model_name,
+            record.prompt_version,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            int(record.fallback_used),
+            record.verification_decision,
+            record.editorial_quality_decision,
+            record.status.value,
+            record.created_at.isoformat(),
+        ),
+    )
+
+    connection.commit()
+    connection.close()
+
+    initialize_database(database_path)
+
+    connection = sqlite3.connect(database_path)
+
+    columns = {
+        row[1]
+        for row in connection.execute(
+            "PRAGMA table_info(rewrite_history)"
+        ).fetchall()
+    }
+
+    stored_policy = connection.execute(
+        """
+        SELECT claim_lock_workspace_policy
+        FROM rewrite_history
+        WHERE rewrite_id = ?
+        """,
+        (record.rewrite_id,),
+    ).fetchone()
+
+    connection.close()
+
+    assert "claim_lock_workspace_policy" in columns
+
+    assert stored_policy is not None
+    assert stored_policy[0] is None
+
+    reopened = SQLiteRewriteHistoryRepository(
+        database_path
+    )
+
+    loaded = reopened.get(record.rewrite_id)
+
+    assert loaded == record
+    assert loaded is not None
+    assert loaded.claim_lock_workspace_policy is None
