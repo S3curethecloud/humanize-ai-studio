@@ -10,6 +10,9 @@ from app.v2.domain.claim_lock import (
 from app.v2.domain.models import (
     RewriteHistoryRecord,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockRuntimeContext,
+)
 from app.v2.domain.voice_rewrite import (
     VoiceRewriteGuidance,
 )
@@ -42,12 +45,18 @@ class VoiceAwareWorkspaceRewriteResult:
         guidance: VoiceRewriteGuidance,
         claim_lock_preparation: ClaimLockPreparationResult,
         claim_lock_validation: ClaimLockValidationResult,
+        claim_lock_runtime_context: (
+            EnterpriseClaimLockRuntimeContext | None
+        ) = None,
     ) -> None:
         self.response = response
         self.history = history
         self.guidance = guidance
         self.claim_lock_preparation = claim_lock_preparation
         self.claim_lock_validation = claim_lock_validation
+        self.claim_lock_runtime_context = (
+            claim_lock_runtime_context
+        )
 
 
 class VoiceAwareWorkspaceRewriteService:
@@ -73,7 +82,9 @@ class VoiceAwareWorkspaceRewriteService:
             ExplicitProtectedTerm,
             ...,
         ] = (),
-        claim_lock_enforcement_mode: ClaimLockEnforcementMode = (ClaimLockEnforcementMode.STRICT),
+        claim_lock_enforcement_mode: (
+            ClaimLockEnforcementMode | None
+        ) = None,
     ) -> VoiceAwareWorkspaceRewriteResult:
         guidance = self._guidance_service.build_guidance(
             workspace_id=workspace_id,
@@ -99,4 +110,7 @@ class VoiceAwareWorkspaceRewriteService:
             guidance=guidance,
             claim_lock_preparation=(result.claim_lock_preparation),
             claim_lock_validation=(result.claim_lock_validation),
+            claim_lock_runtime_context=(
+                result.claim_lock_runtime_context
+            ),
         )

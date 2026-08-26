@@ -34,6 +34,10 @@ from app.v2.services.enterprise_quota_runtime_context_service import (
     EnterpriseQuotaRuntimeContextResolutionError,
     EnterpriseQuotaRuntimeContextService,
 )
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeIntegrityError,
+    EnterpriseClaimLockRuntimeService,
+)
 from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
     EnterpriseQuotaAdmissionDeniedError,
     EnterpriseSingleRewriteQuotaAdmissionService,
@@ -149,6 +153,9 @@ def _workspace_service(
     history_service: MagicMock | None = None,
     observability: MagicMock | None = None,
     workspace_service: MagicMock | None = None,
+    enterprise_claim_lock_runtime_service: (
+        EnterpriseClaimLockRuntimeService | None
+    ) = None,
     authorization_gate=None,
 ) -> tuple[
     WorkspaceRewriteService,
@@ -170,6 +177,9 @@ def _workspace_service(
         history_service=resolved_history,
         workflow=resolved_workflow,
         quota_admission=quota_admission,  # type: ignore[arg-type]
+        enterprise_claim_lock_runtime_service=(
+            enterprise_claim_lock_runtime_service
+        ),
         observability=observability,
         authorization_gate=(
             authorization_gate
@@ -532,3 +542,84 @@ def test_complex_rewrite_services_do_not_receive_single_rewrite_hook() -> None:
 
     assert "quota_admission" not in multi_parameters
     assert "quota_admission" not in long_parameters
+
+
+def test_rewrite_authorization_precedes_claim_lock_runtime_resolution() -> None:
+    admission = MagicMock(
+        spec=EnterpriseSingleRewriteQuotaAdmissionService,
+    )
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+
+    service, _workspace, _history, workflow = _workspace_service(
+        quota_admission=admission,
+        enterprise_claim_lock_runtime_service=runtime,
+        authorization_gate=deny_all_workspace_authorization_gate(),
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="permission_not_granted",
+    ):
+        service.execute(
+            workspace_id="workspace_test",
+            user_id="user_test",
+            request=_request(),
+        )
+
+    runtime.resolve.assert_not_called()
+    admission.admit.assert_not_called()
+    workflow.execute.assert_not_called()
+
+
+def test_claim_lock_runtime_failure_precedes_quota_and_generation() -> None:
+    admission = MagicMock(
+        spec=EnterpriseSingleRewriteQuotaAdmissionService,
+    )
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+    runtime.resolve.side_effect = (
+        EnterpriseClaimLockRuntimeIntegrityError(
+            "claim_lock_policy_resolution_failed"
+        )
+    )
+
+    history = MagicMock(
+        spec=RewriteHistoryService,
+    )
+    workflow = MagicMock(
+        spec=RewriteWorkflow,
+    )
+
+    service, _workspace, _history, _workflow = _workspace_service(
+        quota_admission=admission,
+        workflow=workflow,
+        history_service=history,
+        enterprise_claim_lock_runtime_service=runtime,
+    )
+
+    request = _request()
+
+    with pytest.raises(
+        EnterpriseClaimLockRuntimeIntegrityError,
+        match="claim_lock_policy_resolution_failed",
+    ):
+        service.execute(
+            workspace_id="workspace_test",
+            user_id="user_test",
+            request=request,
+        )
+
+    runtime.resolve.assert_called_once_with(
+        workspace_id="workspace_test",
+        user_id="user_test",
+        text=request.text,
+        explicit_protected_terms=(),
+        claim_lock_enforcement_mode=None,
+    )
+
+    admission.admit.assert_not_called()
+    workflow.execute.assert_not_called()
+    history.record_rewrite.assert_not_called()

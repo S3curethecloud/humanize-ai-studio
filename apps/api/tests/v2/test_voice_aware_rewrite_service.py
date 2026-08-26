@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from app.domain.models import (
@@ -338,3 +340,43 @@ def test_voice_guidance_cannot_override_v1_fact_failure() -> None:
     assert result.guidance.guardrails.voice_can_override_release_decision is False
 
     assert result.guidance.guardrails.v1_verification_authoritative is True
+
+
+def test_voice_delegates_one_runtime_resolution_with_optional_mode() -> None:
+    recording = RecordingProvider()
+    services, voice_rewrite = _build_services(recording)
+
+    user_id, workspace_id, profile_id = _create_profile(
+        services
+    )
+
+    runtime = MagicMock(
+        wraps=services.enterprise_claim_lock_runtime,
+    )
+
+    services.rewrite._enterprise_claim_lock_runtime_service = (
+        runtime
+    )
+
+    result = voice_rewrite.execute(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        profile_id=profile_id,
+        request=_request(),
+        claim_lock_enforcement_mode=None,
+    )
+
+    runtime.resolve.assert_called_once()
+
+    call = runtime.resolve.call_args
+
+    assert call.kwargs["workspace_id"] == workspace_id
+    assert call.kwargs["user_id"] == user_id
+    assert call.kwargs["claim_lock_enforcement_mode"] is None
+
+    assert result.claim_lock_runtime_context is not None
+
+    assert not hasattr(
+        voice_rewrite,
+        "_enterprise_claim_lock_runtime_service",
+    )

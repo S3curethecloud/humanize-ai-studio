@@ -14,6 +14,9 @@ from app.v2.domain.claim_lock import (
 from app.v2.domain.claim_lock_audit import (
     ClaimLockValidationAuditSnapshot,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockRuntimeContext,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     VoiceRewriteAnalysisSnapshot,
@@ -30,6 +33,9 @@ from app.v2.services.claim_lock_validator import (
     ClaimLockValidationResult,
     ClaimLockValidator,
     ClaimLockViolationError,
+)
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeService,
 )
 from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
     EnterpriseSingleRewriteQuotaAdmissionService,
@@ -59,11 +65,17 @@ class WorkspaceRewriteResult:
         history: RewriteHistoryRecord,
         claim_lock_preparation: ClaimLockPreparationResult,
         claim_lock_validation: ClaimLockValidationResult,
+        claim_lock_runtime_context: (
+            EnterpriseClaimLockRuntimeContext | None
+        ) = None,
     ) -> None:
         self.response = response
         self.history = history
         self.claim_lock_preparation = claim_lock_preparation
         self.claim_lock_validation = claim_lock_validation
+        self.claim_lock_runtime_context = (
+            claim_lock_runtime_context
+        )
 
 
 class WorkspaceRewriteService:
@@ -73,6 +85,9 @@ class WorkspaceRewriteService:
         history_service: RewriteHistoryService,
         workflow: RewriteWorkflow,
         quota_admission: (EnterpriseSingleRewriteQuotaAdmissionService | None) = None,
+        enterprise_claim_lock_runtime_service: (
+            EnterpriseClaimLockRuntimeService | None
+        ) = None,
         claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
         claim_lock_validator: (ClaimLockValidator | None) = None,
         observability: SingleRewriteObservability | None = None,
@@ -85,8 +100,26 @@ class WorkspaceRewriteService:
         self._observability = observability
         self._authorization_gate = authorization_gate
         self._duration_clock = duration_clock
+
+        if (
+            enterprise_claim_lock_runtime_service is not None
+            and claim_lock_preparation_service is not None
+        ):
+            raise ValueError(
+                "single rewrite must not receive both enterprise "
+                "claim lock runtime and direct preparation authority"
+            )
+
+        self._enterprise_claim_lock_runtime_service = (
+            enterprise_claim_lock_runtime_service
+        )
         self._claim_lock_preparation_service = (
-            claim_lock_preparation_service or ClaimLockPreparationService()
+            None
+            if enterprise_claim_lock_runtime_service is not None
+            else (
+                claim_lock_preparation_service
+                or ClaimLockPreparationService()
+            )
         )
         self._claim_lock_validator = claim_lock_validator or ClaimLockValidator()
 
@@ -103,7 +136,9 @@ class WorkspaceRewriteService:
             ExplicitProtectedTerm,
             ...,
         ] = (),
-        claim_lock_enforcement_mode: ClaimLockEnforcementMode = (ClaimLockEnforcementMode.STRICT),
+        claim_lock_enforcement_mode: (
+            ClaimLockEnforcementMode | None
+        ) = None,
     ) -> WorkspaceRewriteResult:
         started_at = self._duration_clock()
 
@@ -113,11 +148,60 @@ class WorkspaceRewriteService:
             permission=EnterprisePermission.REWRITE_EXECUTE,
         )
 
-        claim_lock_preparation = self._claim_lock_preparation_service.prepare(
-            text=request.text,
-            explicit_terms=explicit_protected_terms,
-            enforcement_mode=claim_lock_enforcement_mode,
-        )
+        claim_lock_runtime_context = None
+
+        if self._enterprise_claim_lock_runtime_service is not None:
+            claim_lock_runtime_context = (
+                self._enterprise_claim_lock_runtime_service.resolve(
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    text=request.text,
+                    explicit_protected_terms=(
+                        explicit_protected_terms
+                    ),
+                    claim_lock_enforcement_mode=(
+                        claim_lock_enforcement_mode
+                    ),
+                )
+            )
+            claim_lock_preparation = (
+                claim_lock_runtime_context.request_preparation
+            )
+            effective_claim_lock = (
+                claim_lock_runtime_context.effective_claim_lock
+            )
+            effective_enforcement_mode = (
+                claim_lock_runtime_context.effective_enforcement_mode
+            )
+        else:
+            preparation_service = (
+                self._claim_lock_preparation_service
+            )
+
+            if preparation_service is None:
+                raise RuntimeError(
+                    "single rewrite claim lock preparation "
+                    "authority is unavailable"
+                )
+
+            legacy_enforcement_mode = (
+                claim_lock_enforcement_mode
+                or ClaimLockEnforcementMode.STRICT
+            )
+
+            claim_lock_preparation = preparation_service.prepare(
+                text=request.text,
+                explicit_terms=explicit_protected_terms,
+                enforcement_mode=legacy_enforcement_mode,
+            )
+            effective_claim_lock = (
+                claim_lock_preparation.claim_lock
+            )
+            effective_enforcement_mode = (
+                effective_claim_lock.enforcement_mode
+                if effective_claim_lock is not None
+                else legacy_enforcement_mode
+            )
 
         if self._quota_admission is not None:
             self._quota_admission.admit(
@@ -128,13 +212,14 @@ class WorkspaceRewriteService:
         response = self._workflow.execute(request)
 
         claim_lock_validation = self._claim_lock_validator.validate(
-            claim_lock=(claim_lock_preparation.claim_lock),
+            claim_lock=effective_claim_lock,
             rewritten_text=(response.rewritten_text),
         )
 
         if (
             response.verification.decision is not ReleaseDecision.FAIL
-            and claim_lock_enforcement_mode is ClaimLockEnforcementMode.STRICT
+            and effective_enforcement_mode
+            is ClaimLockEnforcementMode.STRICT
             and claim_lock_validation.decision is ClaimLockValidationDecision.VIOLATION
         ):
             raise ClaimLockViolationError(claim_lock_validation)
@@ -143,7 +228,7 @@ class WorkspaceRewriteService:
             ClaimLockValidationAuditSnapshot.model_validate(
                 claim_lock_validation.model_dump(mode="json")
             )
-            if claim_lock_preparation.claim_lock is not None
+            if effective_claim_lock is not None
             else None
         )
 
@@ -155,11 +240,11 @@ class WorkspaceRewriteService:
             voice_profile_id=voice_profile_id,
             voice_guidance_version=voice_guidance_version,
             voice_analysis_snapshot=voice_analysis_snapshot,
-            claim_lock_snapshot=(claim_lock_preparation.claim_lock),
+            claim_lock_snapshot=effective_claim_lock,
             claim_lock_validation=(claim_lock_validation_audit),
             claim_lock_enforcement_mode=(
-                claim_lock_enforcement_mode
-                if claim_lock_preparation.claim_lock is not None
+                effective_enforcement_mode
+                if effective_claim_lock is not None
                 else None
             ),
         )
@@ -185,4 +270,7 @@ class WorkspaceRewriteService:
             history=history,
             claim_lock_preparation=(claim_lock_preparation),
             claim_lock_validation=(claim_lock_validation),
+            claim_lock_runtime_context=(
+                claim_lock_runtime_context
+            ),
         )

@@ -566,7 +566,9 @@ class V2Services:
             history_service=self.history,
             workflow=resolved_workflow,
             quota_admission=(single_rewrite_quota_admission),
-            claim_lock_preparation_service=(self.claim_lock_preparation),
+            enterprise_claim_lock_runtime_service=(
+                self.enterprise_claim_lock_runtime
+            ),
             observability=(self.single_rewrite_observability),
             authorization_gate=self.workspace_authorization,
         )
