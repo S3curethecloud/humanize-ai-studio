@@ -24,6 +24,9 @@ from app.v2.domain.claim_lock import (
 from app.v2.domain.enterprise_claim_lock_policy import (
     EnterpriseWorkspaceClaimLockPolicy,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseQuotaWindow,
@@ -341,6 +344,10 @@ class VoiceRewriteEvidence(BaseModel):
 class ClaimLockRewriteEvidence(BaseModel):
     preparation: ClaimLockPreparationResult
     validation: ClaimLockValidationResult
+    workspace_policy: (
+        EnterpriseClaimLockWorkspacePolicyExecutionEvidence
+        | None
+    ) = None
 
 
 class CandidateControlRewriteEvidence(BaseModel):

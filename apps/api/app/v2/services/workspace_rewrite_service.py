@@ -247,6 +247,12 @@ class WorkspaceRewriteService:
                 if effective_claim_lock is not None
                 else None
             ),
+            claim_lock_workspace_policy=(
+                claim_lock_runtime_context
+                .workspace_policy_evidence
+                if claim_lock_runtime_context is not None
+                else None
+            ),
         )
 
         if self._observability is not None:

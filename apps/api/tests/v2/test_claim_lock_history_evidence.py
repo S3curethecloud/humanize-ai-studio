@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 import pytest
 from pydantic import ValidationError
@@ -18,6 +20,9 @@ from app.v2.domain.claim_lock_audit import (
     ClaimLockValidationAuditCheck,
     ClaimLockValidationAuditSnapshot,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
 )
@@ -26,6 +31,9 @@ from app.v2.repositories.memory import (
     InMemoryRewriteHistoryRepository,
     InMemoryUserRepository,
     InMemoryWorkspaceRepository,
+)
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeService,
 )
 from app.v2.services.rewrite_history_service import (
     RewriteHistoryService,
@@ -302,3 +310,117 @@ def test_empty_claim_lock_preparation_keeps_history_audit_absent() -> None:
     assert result.history.claim_lock_snapshot is None
     assert result.history.claim_lock_validation is None
     assert result.history.claim_lock_enforcement_mode is None
+
+def _workspace_policy_execution_evidence(
+) -> EnterpriseClaimLockWorkspacePolicyExecutionEvidence:
+    return EnterpriseClaimLockWorkspacePolicyExecutionEvidence(
+        policy_id="policy_history_test",
+        policy_revision=7,
+        enforcement_mode=ClaimLockEnforcementMode.STRICT,
+        applicable_term_ids=(),
+    )
+
+
+def test_history_workspace_policy_evidence_is_independent_of_v23_tuple(
+) -> None:
+    evidence = _workspace_policy_execution_evidence()
+
+    record = RewriteHistoryRecord(
+        **_base_history_kwargs(),
+        claim_lock_workspace_policy=evidence,
+    )
+
+    assert record.claim_lock_snapshot is None
+    assert record.claim_lock_validation is None
+    assert record.claim_lock_enforcement_mode is None
+    assert record.claim_lock_workspace_policy == evidence
+
+
+def test_history_service_persists_workspace_policy_evidence_without_claim_lock_tuple(
+) -> None:
+    repository = InMemoryRewriteHistoryRepository()
+
+    service = RewriteHistoryService(
+        history=repository,
+        authorization_gate=(
+            allow_all_workspace_authorization_gate()
+        ),
+    )
+
+    request = RewriteRequest(
+        text="Approved.",
+    )
+    response = RewriteWorkflow().execute(
+        request
+    )
+    evidence = _workspace_policy_execution_evidence()
+
+    record = service.record_rewrite(
+        workspace_id="workspace-policy-history",
+        user_id="user-policy-history",
+        request=request,
+        response=response,
+        claim_lock_workspace_policy=evidence,
+    )
+
+    assert record.claim_lock_snapshot is None
+    assert record.claim_lock_validation is None
+    assert record.claim_lock_enforcement_mode is None
+    assert record.claim_lock_workspace_policy == evidence
+
+
+def test_workspace_rewrite_forwards_runtime_workspace_policy_evidence(
+) -> None:
+    repository = InMemoryRewriteHistoryRepository()
+
+    history_service = RewriteHistoryService(
+        history=repository,
+        authorization_gate=(
+            allow_all_workspace_authorization_gate()
+        ),
+    )
+
+    evidence = _workspace_policy_execution_evidence()
+
+    runtime_context = MagicMock()
+    runtime_context.request_preparation = MagicMock()
+    runtime_context.effective_claim_lock = _lock()
+    runtime_context.effective_enforcement_mode = (
+        ClaimLockEnforcementMode.STRICT
+    )
+    runtime_context.workspace_policy_evidence = evidence
+
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+    runtime.resolve.return_value = runtime_context
+
+    service = WorkspaceRewriteService(
+        history_service=history_service,
+        workflow=RewriteWorkflow(),
+        enterprise_claim_lock_runtime_service=runtime,
+        authorization_gate=(
+            allow_all_workspace_authorization_gate()
+        ),
+    )
+
+    request = RewriteRequest(
+        text="Deployment completed successfully.",
+    )
+
+    result = service.execute(
+        workspace_id="workspace-runtime-history",
+        user_id="user-runtime-history",
+        request=request,
+        claim_lock_enforcement_mode=None,
+    )
+
+    assert result.history.claim_lock_workspace_policy == evidence
+
+    runtime.resolve.assert_called_once_with(
+        workspace_id="workspace-runtime-history",
+        user_id="user-runtime-history",
+        text=request.text,
+        explicit_protected_terms=(),
+        claim_lock_enforcement_mode=None,
+    )

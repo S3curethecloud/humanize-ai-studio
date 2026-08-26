@@ -623,3 +623,56 @@ def test_claim_lock_runtime_failure_precedes_quota_and_generation() -> None:
     admission.admit.assert_not_called()
     workflow.execute.assert_not_called()
     history.record_rewrite.assert_not_called()
+
+def test_rewrite_route_preserves_omitted_claim_lock_mode_and_maps_runtime_integrity_to_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rewrite = MagicMock()
+    rewrite.execute.side_effect = (
+        EnterpriseClaimLockRuntimeIntegrityError(
+            "claim_lock_policy_resolution_failed"
+        )
+    )
+
+    monkeypatch.setattr(
+        v2_routes,
+        "services",
+        SimpleNamespace(
+            rewrite=rewrite,
+        ),
+    )
+
+    request = WorkspaceRewriteRequest.model_validate(
+        {
+            "user_id": "user_test",
+            "rewrite": {
+                "text": "Original text.",
+                "document_type": "general",
+                "audience": "general audience",
+                "tone": "natural",
+                "intensity": "natural_rewrite",
+                "preserve_numbers": True,
+                "preserve_dates": True,
+            },
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        v2_routes.create_workspace_rewrite(
+            workspace_id="workspace_test",
+            request=request,
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == (
+        "claim_lock_policy_resolution_failed"
+    )
+
+    rewrite.execute.assert_called_once()
+
+    assert (
+        rewrite.execute.call_args.kwargs[
+            "claim_lock_enforcement_mode"
+        ]
+        is None
+    )

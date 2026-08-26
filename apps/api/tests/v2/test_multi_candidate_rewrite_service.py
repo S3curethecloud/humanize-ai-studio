@@ -491,6 +491,11 @@ def test_enterprise_runtime_resolves_once_for_all_candidates() -> None:
         == 7
     )
 
+    assert (
+        result.history.claim_lock_workspace_policy
+        == runtime_context.workspace_policy_evidence
+    )
+
     effective_claim_lock = (
         runtime_context.effective_claim_lock
     )

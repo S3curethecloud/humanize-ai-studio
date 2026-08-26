@@ -16,6 +16,9 @@ from app.v2.domain.claim_lock import (
 from app.v2.domain.claim_lock_audit import (
     ClaimLockValidationAuditSnapshot,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
     VoiceRewriteAnalysisBinding,
@@ -60,6 +63,10 @@ class RewriteHistoryService:
         claim_lock_snapshot: ClaimLock | None = None,
         claim_lock_validation: ClaimLockValidationAuditSnapshot | None = None,
         claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None,
+        claim_lock_workspace_policy: (
+            EnterpriseClaimLockWorkspacePolicyExecutionEvidence
+            | None
+        ) = None,
         candidate_audit_snapshot: CandidateAuditSnapshot | None = None,
     ) -> RewriteHistoryRecord:
         self._authorization_gate.require(
@@ -114,6 +121,9 @@ class RewriteHistoryService:
             claim_lock_snapshot=claim_lock_snapshot,
             claim_lock_validation=claim_lock_validation,
             claim_lock_enforcement_mode=claim_lock_enforcement_mode,
+            claim_lock_workspace_policy=(
+                claim_lock_workspace_policy
+            ),
             candidate_set_id=candidate_set_id,
             candidate_audit_snapshot=candidate_audit_snapshot,
             selected_candidate_id=selected_candidate_id,

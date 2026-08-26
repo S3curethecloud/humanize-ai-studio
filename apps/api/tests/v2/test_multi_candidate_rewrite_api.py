@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi.testclient import TestClient
@@ -18,6 +19,16 @@ from app.domain.models import (
 )
 from app.main import app
 from app.v2.api.dependencies import V2Services
+from app.v2.domain.claim_lock import (
+    ClaimLockEnforcementMode,
+    ClaimLockOrigin,
+    ClaimLockProvenance,
+    ProtectedTerm,
+)
+from app.v2.domain.enterprise_claim_lock_policy import (
+    EnterpriseClaimLockPolicyStatus,
+    EnterpriseWorkspaceClaimLockPolicy,
+)
 from app.workflows.rewrite_workflow import (
     RewriteWorkflow,
 )
@@ -379,3 +390,78 @@ def test_multi_candidate_claim_lock_evidence_remains_visible() -> None:
     controls = body["multi_candidate"]["controls"]
 
     assert all(control["claim_lock_validation"]["decision"] == "pass" for control in controls)
+
+def test_multi_candidate_active_workspace_policy_exposes_api_and_history_evidence(
+) -> None:
+    user_id, workspace_id = _workspace()
+
+    policy_id = f"policy_{workspace_id}"
+    now = datetime(
+        2026,
+        8,
+        26,
+        12,
+        0,
+        tzinfo=UTC,
+    )
+
+    policy = EnterpriseWorkspaceClaimLockPolicy(
+        policy_id=policy_id,
+        workspace_id=workspace_id,
+        status=EnterpriseClaimLockPolicyStatus.ACTIVE,
+        enforcement_mode=ClaimLockEnforcementMode.STRICT,
+        protected_terms=(
+            ProtectedTerm(
+                term_id="workspace_term_multi_api",
+                text="Project Atlas",
+                case_sensitive=True,
+                provenance=ClaimLockProvenance(
+                    origin=ClaimLockOrigin.WORKSPACE,
+                    source_reference=(
+                        "workspace-claim-lock-policy:"
+                        f"{policy_id}:revision:1"
+                    ),
+                ),
+            ),
+        ),
+        created_by_user_id=user_id,
+        created_at=now,
+        updated_by_user_id=user_id,
+        updated_at=now,
+        revision=1,
+    )
+
+    v2_routes.services.enterprise_claim_lock_policies.create(
+        policy
+    )
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json={
+            **_rewrite_payload(
+                user_id=user_id,
+            ),
+            "candidate_count": 2,
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    workspace_policy = (
+        body["claim_lock"]["workspace_policy"]
+    )
+
+    assert workspace_policy["policy_id"] == policy_id
+    assert workspace_policy["policy_revision"] == 1
+    assert workspace_policy["applicable_term_ids"] == [
+        "workspace_term_multi_api"
+    ]
+
+    assert (
+        body["history"]["claim_lock_workspace_policy"]
+        == workspace_policy
+    )
+
+    assert "multi_candidate" in body

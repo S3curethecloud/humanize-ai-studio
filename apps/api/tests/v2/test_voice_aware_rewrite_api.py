@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,16 @@ from app.v2.api.dependencies import V2Services
 from app.v2.config.persistence import (
     PersistenceBackend,
     V2PersistenceSettings,
+)
+from app.v2.domain.claim_lock import (
+    ClaimLockEnforcementMode,
+    ClaimLockOrigin,
+    ClaimLockProvenance,
+    ProtectedTerm,
+)
+from app.v2.domain.enterprise_claim_lock_policy import (
+    EnterpriseClaimLockPolicyStatus,
+    EnterpriseWorkspaceClaimLockPolicy,
 )
 from app.v2.services.voice_aware_provider import (
     VoiceAwareRewriteProvider,
@@ -1007,3 +1018,176 @@ def test_voice_rewrite_strict_claim_lock_violation_returns_409() -> None:
 
     assert response.status_code == 409
     assert "claim lock strict enforcement failed" in response.json()["detail"]
+
+def _install_active_claim_lock_policy_for_api(
+    *,
+    services: V2Services,
+    workspace_id: str,
+    user_id: str,
+    term_text: str,
+) -> EnterpriseWorkspaceClaimLockPolicy:
+    policy_id = f"policy_{workspace_id}"
+    source_reference = (
+        "workspace-claim-lock-policy:"
+        f"{policy_id}:revision:1"
+    )
+    now = datetime(
+        2026,
+        8,
+        26,
+        12,
+        0,
+        tzinfo=UTC,
+    )
+
+    policy = EnterpriseWorkspaceClaimLockPolicy(
+        policy_id=policy_id,
+        workspace_id=workspace_id,
+        status=EnterpriseClaimLockPolicyStatus.ACTIVE,
+        enforcement_mode=ClaimLockEnforcementMode.STRICT,
+        protected_terms=(
+            ProtectedTerm(
+                term_id="workspace_term_api",
+                text=term_text,
+                case_sensitive=True,
+                provenance=ClaimLockProvenance(
+                    origin=ClaimLockOrigin.WORKSPACE,
+                    source_reference=source_reference,
+                ),
+            ),
+        ),
+        created_by_user_id=user_id,
+        created_at=now,
+        updated_by_user_id=user_id,
+        updated_at=now,
+        revision=1,
+    )
+
+    services.enterprise_claim_lock_policies.create(
+        policy
+    )
+
+    return policy
+
+
+def test_active_workspace_policy_exposes_evidence_without_request_customization(
+) -> None:
+    provider = RecordingProvider()
+    services = _configure(provider)
+
+    user_id = _create_user(
+        email="policy-evidence-owner@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+
+    policy = _install_active_claim_lock_policy_for_api(
+        services=services,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        term_text="Never Appears",
+    )
+
+    payload = _rewrite_payload(
+        user_id=user_id,
+    )
+
+    rewrite_payload = payload["rewrite"]
+    assert isinstance(rewrite_payload, dict)
+    rewrite_payload["text"] = "Approved."
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert "claim_lock" in body
+
+    evidence = body["claim_lock"]
+    workspace_policy = evidence["workspace_policy"]
+
+    assert set(workspace_policy) == {
+        "evidence_version",
+        "policy_version",
+        "policy_id",
+        "policy_revision",
+        "enforcement_mode",
+        "applicable_term_ids",
+    }
+
+    assert workspace_policy["policy_id"] == (
+        policy.policy_id
+    )
+    assert workspace_policy["policy_revision"] == 1
+    assert workspace_policy["enforcement_mode"] == (
+        "strict"
+    )
+    assert workspace_policy["applicable_term_ids"] == []
+
+    assert "claim_lock" not in evidence["preparation"]
+    assert "lock_id" not in evidence["validation"]
+    assert "enforcement_mode" not in evidence["validation"]
+
+    assert (
+        body["history"]["claim_lock_workspace_policy"]
+        == workspace_policy
+    )
+
+
+def test_voice_rewrite_exposes_active_workspace_policy_evidence(
+) -> None:
+    provider = RecordingProvider()
+    services = _configure(provider)
+
+    user_id = _create_user(
+        email="voice-policy-evidence@example.com",
+    )
+    workspace_id = _create_workspace(
+        user_id=user_id,
+    )
+    profile_id = _create_profile(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    policy = _install_active_claim_lock_policy_for_api(
+        services=services,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        term_text="Revenue",
+    )
+
+    response = client.post(
+        f"/api/v2/workspaces/{workspace_id}/rewrites",
+        json=_rewrite_payload(
+            user_id=user_id,
+            voice_profile_id=profile_id,
+        ),
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["voice"]["applied"] is True
+
+    workspace_policy = (
+        body["claim_lock"]["workspace_policy"]
+    )
+
+    assert workspace_policy["policy_id"] == (
+        policy.policy_id
+    )
+    assert workspace_policy["applicable_term_ids"] == [
+        "workspace_term_api"
+    ]
+
+    assert (
+        body["history"]["claim_lock_workspace_policy"]
+        == workspace_policy
+    )

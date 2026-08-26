@@ -24,6 +24,9 @@ from app.v2.domain.claim_lock import (
 from app.v2.domain.claim_lock_audit import (
     ClaimLockValidationAuditSnapshot,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 
 
 class WorkspaceRole(StrEnum):
@@ -208,6 +211,10 @@ class RewriteHistoryRecord(BaseModel):
     claim_lock_snapshot: ClaimLock | None = None
     claim_lock_validation: ClaimLockValidationAuditSnapshot | None = None
     claim_lock_enforcement_mode: ClaimLockEnforcementMode | None = None
+    claim_lock_workspace_policy: (
+        EnterpriseClaimLockWorkspacePolicyExecutionEvidence
+        | None
+    ) = None
 
     candidate_set_id: str | None = Field(
         default=None,

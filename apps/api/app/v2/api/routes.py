@@ -16,9 +16,6 @@ from app.v2.api.evidence_access import (
     EvidenceExposureDisabledError,
     require_evidence_access,
 )
-from app.v2.domain.claim_lock import (
-    ClaimLockEnforcementMode,
-)
 from app.v2.domain.enterprise_claim_lock_policy import (
     EnterpriseClaimLockPolicyStatus,
 )
@@ -68,6 +65,9 @@ from app.v2.services.enterprise_authorization_service import (
 from app.v2.services.enterprise_claim_lock_admin_service import (
     ClaimLockAdministrationFailureReason,
     EnterpriseClaimLockAdministrationError,
+)
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeIntegrityError,
 )
 from app.v2.services.enterprise_membership_admin_service import (
     EnterpriseMembershipAdministrationError,
@@ -1020,10 +1020,6 @@ def create_workspace_rewrite(
     request: WorkspaceRewriteRequest,
 ) -> WorkspaceRewriteResponse:
     try:
-        claim_lock_enforcement_mode = (
-            request.claim_lock_enforcement_mode or ClaimLockEnforcementMode.STRICT
-        )
-
         if request.multi_candidate_requested:
             candidate_count = request.candidate_count
 
@@ -1037,7 +1033,9 @@ def create_workspace_rewrite(
                 candidate_count=candidate_count,
                 voice_profile_id=request.voice_profile_id,
                 explicit_protected_terms=(request.protected_terms),
-                claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+                claim_lock_enforcement_mode=(
+                    request.claim_lock_enforcement_mode
+                ),
             )
 
             return WorkspaceRewriteResponse(
@@ -1056,8 +1054,17 @@ def create_workspace_rewrite(
                     ClaimLockRewriteEvidence(
                         preparation=(multi_result.claim_lock_preparation),
                         validation=(multi_result.selected_claim_lock_validation),
+                        workspace_policy=(
+                            multi_result.history
+                            .claim_lock_workspace_policy
+                        ),
                     )
-                    if request.claim_lock_requested
+                    if (
+                        request.claim_lock_requested
+                        or multi_result.history
+                        .claim_lock_workspace_policy
+                        is not None
+                    )
                     else None
                 ),
                 multi_candidate=(
@@ -1085,7 +1092,9 @@ def create_workspace_rewrite(
                 user_id=request.user_id,
                 request=request.rewrite,
                 explicit_protected_terms=(request.protected_terms),
-                claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+                claim_lock_enforcement_mode=(
+                    request.claim_lock_enforcement_mode
+                ),
             )
 
             return WorkspaceRewriteResponse(
@@ -1095,8 +1104,17 @@ def create_workspace_rewrite(
                     ClaimLockRewriteEvidence(
                         preparation=(result.claim_lock_preparation),
                         validation=(result.claim_lock_validation),
+                        workspace_policy=(
+                            result.history
+                            .claim_lock_workspace_policy
+                        ),
                     )
-                    if request.claim_lock_requested
+                    if (
+                        request.claim_lock_requested
+                        or result.history
+                        .claim_lock_workspace_policy
+                        is not None
+                    )
                     else None
                 ),
             )
@@ -1115,7 +1133,9 @@ def create_workspace_rewrite(
             profile_id=request.voice_profile_id,
             request=request.rewrite,
             explicit_protected_terms=(request.protected_terms),
-            claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+            claim_lock_enforcement_mode=(
+                    request.claim_lock_enforcement_mode
+                ),
         )
 
         return WorkspaceRewriteResponse(
@@ -1130,12 +1150,26 @@ def create_workspace_rewrite(
                 ClaimLockRewriteEvidence(
                     preparation=(voice_result.claim_lock_preparation),
                     validation=(voice_result.claim_lock_validation),
+                    workspace_policy=(
+                        voice_result.history
+                        .claim_lock_workspace_policy
+                    ),
                 )
-                if request.claim_lock_requested
+                if (
+                    request.claim_lock_requested
+                    or voice_result.history
+                    .claim_lock_workspace_policy
+                    is not None
+                )
                 else None
             ),
         )
 
+    except EnterpriseClaimLockRuntimeIntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=exc.reason,
+        ) from exc
     except EnterpriseQuotaAdmissionDeniedError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -1186,16 +1220,14 @@ def create_workspace_long_document_rewrite(
     request: WorkspaceLongDocumentRewriteRequest,
 ) -> WorkspaceLongDocumentRewriteResponse:
     try:
-        claim_lock_enforcement_mode = (
-            request.claim_lock_enforcement_mode or ClaimLockEnforcementMode.STRICT
-        )
-
         result = services.long_document.execute(
             workspace_id=workspace_id,
             user_id=request.user_id,
             request=request.rewrite,
             explicit_protected_terms=(request.protected_terms),
-            claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+            claim_lock_enforcement_mode=(
+                    request.claim_lock_enforcement_mode
+                ),
         )
 
         return WorkspaceLongDocumentRewriteResponse(
@@ -1205,12 +1237,26 @@ def create_workspace_long_document_rewrite(
                 ClaimLockRewriteEvidence(
                     preparation=(result.claim_lock_preparation),
                     validation=(result.evaluation.claim_lock_validation),
+                    workspace_policy=(
+                        result.audit
+                        .claim_lock_workspace_policy
+                    ),
                 )
-                if request.claim_lock_requested
+                if (
+                    request.claim_lock_requested
+                    or result.audit
+                    .claim_lock_workspace_policy
+                    is not None
+                )
                 else None
             ),
         )
 
+    except EnterpriseClaimLockRuntimeIntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=exc.reason,
+        ) from exc
     except EnterpriseQuotaAdmissionDeniedError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

@@ -38,6 +38,7 @@ from app.v2.services.document_structure_detector import (
     DocumentStructureDetector,
 )
 from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeIntegrityError,
     EnterpriseClaimLockRuntimeService,
 )
 from app.v2.services.enterprise_long_document_quota_admission_service import (
@@ -999,3 +1000,59 @@ def test_enterprise_runtime_is_not_resolved_per_section() -> None:
     ] == 6
 
     orchestrator.execute.assert_called_once()
+
+def test_long_document_route_preserves_omitted_claim_lock_mode_and_maps_runtime_integrity_to_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    long_document = MagicMock()
+    long_document.execute.side_effect = (
+        EnterpriseClaimLockRuntimeIntegrityError(
+            "claim_lock_composition_conflict"
+        )
+    )
+
+    monkeypatch.setattr(
+        v2_routes,
+        "services",
+        SimpleNamespace(
+            long_document=long_document,
+        ),
+    )
+
+    request = WorkspaceLongDocumentRewriteRequest.model_validate(
+        {
+            "user_id": "user_test",
+            "rewrite": {
+                "text": (
+                    "First paragraph.\n\n"
+                    "Second paragraph."
+                ),
+                "document_type": "general",
+                "audience": "general audience",
+                "tone": "natural",
+                "intensity": "natural_rewrite",
+                "preserve_numbers": True,
+                "preserve_dates": True,
+            },
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        v2_routes.create_workspace_long_document_rewrite(
+            workspace_id="workspace_test",
+            request=request,
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == (
+        "claim_lock_composition_conflict"
+    )
+
+    long_document.execute.assert_called_once()
+
+    assert (
+        long_document.execute.call_args.kwargs[
+            "claim_lock_enforcement_mode"
+        ]
+        is None
+    )
