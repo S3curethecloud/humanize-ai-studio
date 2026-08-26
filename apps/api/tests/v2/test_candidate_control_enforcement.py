@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from app.domain.models import (
@@ -29,6 +31,9 @@ from app.v2.services.candidate_rewrite_orchestrator import (
 )
 from app.v2.services.claim_lock_extractor import (
     ExplicitProtectedTerm,
+)
+from app.v2.services.claim_lock_preparation import (
+    ClaimLockPreparationService,
 )
 from app.v2.services.claim_lock_validator import (
     ClaimLockCheckStatus,
@@ -470,4 +475,85 @@ def test_control_evidence_preserves_candidate_order() -> None:
         1,
         2,
         3,
+    )
+
+
+def test_pre_resolved_effective_control_skips_repreparation() -> None:
+    request = _request()
+
+    plan = CandidateGenerationPlanner().plan(
+        request=request,
+        candidate_count=2,
+    )
+
+    workflow = ControlledRecordingWorkflow(
+        outputs=(
+            (
+                "Project Atlas completed the review. "
+                "Revenue was 42 million in 2025.",
+                ReleaseDecision.PASS,
+            ),
+            (
+                "Revenue was 42 million in 2025. "
+                "Project Atlas finished the review.",
+                ReleaseDecision.PASS,
+            ),
+        ),
+    )
+
+    candidate_orchestrator = CandidateRewriteOrchestrator(
+        workflow=workflow,
+    )
+
+    direct_preparation = MagicMock(
+        spec=ClaimLockPreparationService,
+    )
+
+    controlled = ControlledCandidateRewriteOrchestrator(
+        candidate_orchestrator=candidate_orchestrator,
+        claim_lock_preparation_service=direct_preparation,
+    )
+
+    runtime_preparation = (
+        ClaimLockPreparationService().prepare(
+            text=request.text,
+            explicit_terms=_explicit_atlas_term(),
+            enforcement_mode=(
+                ClaimLockEnforcementMode.STRICT
+            ),
+        )
+    )
+
+    assert runtime_preparation.claim_lock is not None
+
+    result = controlled.execute(
+        request=request,
+        plan=plan,
+        pre_resolved_claim_lock_preparation=(
+            runtime_preparation
+        ),
+        effective_claim_lock=(
+            runtime_preparation.claim_lock
+        ),
+        effective_enforcement_mode=(
+            ClaimLockEnforcementMode.STRICT
+        ),
+    )
+
+    direct_preparation.prepare.assert_not_called()
+
+    assert (
+        result.effective_claim_lock
+        == runtime_preparation.claim_lock
+    )
+
+    assert (
+        result.effective_enforcement_mode
+        is ClaimLockEnforcementMode.STRICT
+    )
+
+    assert all(
+        control.claim_lock_validation.lock_id
+        == runtime_preparation.claim_lock.lock_id
+        for control in result.controls
     )

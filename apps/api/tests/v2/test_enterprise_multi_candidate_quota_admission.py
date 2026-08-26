@@ -21,6 +21,9 @@ from app.v2.api import routes as v2_routes
 from app.v2.api.models import WorkspaceRewriteRequest
 from app.v2.domain.candidate_generation import CandidateGenerationPlan
 from app.v2.domain.claim_lock import ClaimLockEnforcementMode
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockRuntimeContext,
+)
 from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseQuotaOperation,
@@ -40,6 +43,10 @@ from app.v2.services.claim_lock_preparation import (
 )
 from app.v2.services.complex_rewrite_observability import (
     MultiCandidateObservability,
+)
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeIntegrityError,
+    EnterpriseClaimLockRuntimeService,
 )
 from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
     EnterpriseMultiCandidateQuotaAdmissionService,
@@ -103,6 +110,26 @@ def _request(
     )
 
 
+def _claim_lock_runtime_context(
+) -> EnterpriseClaimLockRuntimeContext:
+    preparation = ClaimLockPreparationService().prepare(
+        text=_request().text,
+        enforcement_mode=(
+            ClaimLockEnforcementMode.STRICT
+        ),
+    )
+
+    return EnterpriseClaimLockRuntimeContext(
+        request_preparation=preparation,
+        effective_claim_lock=preparation.claim_lock,
+        workspace_policy_evidence=None,
+        request_customization_requested=False,
+        effective_enforcement_mode=(
+            ClaimLockEnforcementMode.STRICT
+        ),
+    )
+
+
 def _enforcement_result(
     *,
     consumed: bool,
@@ -155,6 +182,9 @@ def _multi_service(
     history_service: MagicMock | None = None,
     workflow: MagicMock | None = None,
     observability: MagicMock | None = None,
+    enterprise_claim_lock_runtime_service: (
+        MagicMock | None
+    ) = None,
     claim_lock_preparation_service: MagicMock | None = None,
     voice_guidance_service: MagicMock | None = None,
     voice_provider: MagicMock | None = None,
@@ -179,6 +209,9 @@ def _multi_service(
         workflow=resolved_workflow,
         multi_candidate_quota_admission=quota_admission,
         observability=observability,
+        enterprise_claim_lock_runtime_service=(
+            enterprise_claim_lock_runtime_service
+        ),
         claim_lock_preparation_service=(
             claim_lock_preparation_service
         ),
@@ -298,6 +331,10 @@ def test_non_member_fails_before_quota_admission() -> None:
         spec=EnterpriseMultiCandidateQuotaAdmissionService,
     )
 
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+
     workspace = MagicMock(
         spec=WorkspaceService,
     )
@@ -305,7 +342,10 @@ def test_non_member_fails_before_quota_admission() -> None:
     service, _workspace, _history, workflow = _multi_service(
         quota_admission=admission,
         workspace_service=workspace,
-            authorization_gate=deny_all_workspace_authorization_gate(),
+        enterprise_claim_lock_runtime_service=runtime,
+        authorization_gate=(
+            deny_all_workspace_authorization_gate()
+        ),
     )
 
     with pytest.raises(
@@ -319,11 +359,12 @@ def test_non_member_fails_before_quota_admission() -> None:
             candidate_count=2,
         )
 
+    runtime.resolve.assert_not_called()
     admission.admit.assert_not_called()
     workflow.execute.assert_not_called()
 
 
-def test_claim_lock_preparation_occurs_before_quota_admission() -> None:
+def test_legacy_claim_lock_preparation_occurs_before_quota_admission() -> None:
     preparation = MagicMock(
         spec=ClaimLockPreparationService,
     )
@@ -358,6 +399,104 @@ def test_claim_lock_preparation_occurs_before_quota_admission() -> None:
         )
 
     preparation.prepare.assert_called_once()
+    workflow.execute.assert_not_called()
+    history.record_rewrite.assert_not_called()
+
+
+
+
+def test_claim_lock_runtime_resolution_occurs_before_quota_admission() -> None:
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+    runtime.resolve.return_value = (
+        _claim_lock_runtime_context()
+    )
+
+    admission = MagicMock(
+        spec=EnterpriseMultiCandidateQuotaAdmissionService,
+    )
+
+    def deny_after_runtime(**_kwargs: object) -> None:
+        runtime.resolve.assert_called_once()
+
+        raise EnterpriseQuotaAdmissionDeniedError(
+            _enforcement_result(consumed=False)
+        )
+
+    admission.admit.side_effect = deny_after_runtime
+
+    service, _workspace, history, workflow = _multi_service(
+        quota_admission=admission,
+        enterprise_claim_lock_runtime_service=runtime,
+    )
+
+    request = _request()
+
+    with pytest.raises(
+        EnterpriseQuotaAdmissionDeniedError,
+    ):
+        service.execute(
+            workspace_id="workspace_test",
+            user_id="user_test",
+            request=request,
+            candidate_count=2,
+        )
+
+    runtime.resolve.assert_called_once_with(
+        workspace_id="workspace_test",
+        user_id="user_test",
+        text=request.text,
+        explicit_protected_terms=(),
+        claim_lock_enforcement_mode=None,
+    )
+
+    admission.admit.assert_called_once()
+    workflow.execute.assert_not_called()
+    history.record_rewrite.assert_not_called()
+
+
+def test_claim_lock_runtime_failure_precedes_quota_and_generation() -> None:
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+    runtime.resolve.side_effect = (
+        EnterpriseClaimLockRuntimeIntegrityError(
+            "claim_lock_policy_resolution_failed"
+        )
+    )
+
+    admission = MagicMock(
+        spec=EnterpriseMultiCandidateQuotaAdmissionService,
+    )
+
+    service, _workspace, history, workflow = _multi_service(
+        quota_admission=admission,
+        enterprise_claim_lock_runtime_service=runtime,
+    )
+
+    request = _request()
+
+    with pytest.raises(
+        EnterpriseClaimLockRuntimeIntegrityError,
+        match="claim_lock_policy_resolution_failed",
+    ):
+        service.execute(
+            workspace_id="workspace_test",
+            user_id="user_test",
+            request=request,
+            candidate_count=2,
+        )
+
+    runtime.resolve.assert_called_once_with(
+        workspace_id="workspace_test",
+        user_id="user_test",
+        text=request.text,
+        explicit_protected_terms=(),
+        claim_lock_enforcement_mode=None,
+    )
+
+    admission.admit.assert_not_called()
     workflow.execute.assert_not_called()
     history.record_rewrite.assert_not_called()
 

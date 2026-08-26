@@ -581,7 +581,9 @@ class V2Services:
             ),
             voice_guidance_service=self.voice_rewrite_guidance,
             voice_provider=resolved_voice_provider,
-            claim_lock_preparation_service=(self.claim_lock_preparation),
+            enterprise_claim_lock_runtime_service=(
+                self.enterprise_claim_lock_runtime
+            ),
             observability=(self.multi_candidate_observability),
             authorization_gate=self.workspace_authorization,
         )

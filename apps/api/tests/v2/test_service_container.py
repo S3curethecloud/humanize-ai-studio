@@ -272,3 +272,16 @@ def test_service_container_builds_one_canonical_claim_lock_runtime() -> None:
         services.rewrite._claim_lock_preparation_service
         is None
     )
+
+    assert (
+        services.multi_candidate
+        ._enterprise_claim_lock_runtime_service
+        is runtime
+    )
+
+    assert (
+        services.multi_candidate
+        ._controlled_orchestrator
+        ._claim_lock_preparation_service
+        is None
+    )

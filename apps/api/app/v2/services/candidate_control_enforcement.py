@@ -12,6 +12,7 @@ from app.v2.domain.candidate_generation import (
     CandidateGenerationPlan,
 )
 from app.v2.domain.claim_lock import (
+    ClaimLock,
     ClaimLockEnforcementMode,
 )
 from app.v2.services.candidate_rewrite_orchestrator import (
@@ -52,6 +53,8 @@ class CandidateControlEvidence:
 class ControlledCandidateGenerationExecution:
     generation: CandidateGenerationExecution
     claim_lock_preparation: ClaimLockPreparationResult
+    effective_claim_lock: ClaimLock | None
+    effective_enforcement_mode: ClaimLockEnforcementMode
     controls: tuple[
         CandidateControlEvidence,
         ...,
@@ -93,9 +96,11 @@ class ControlledCandidateRewriteOrchestrator:
     ) -> None:
         self._candidate_orchestrator = candidate_orchestrator
         self._claim_lock_preparation_service = (
-            claim_lock_preparation_service or ClaimLockPreparationService()
+            claim_lock_preparation_service
         )
-        self._claim_lock_validator = claim_lock_validator or ClaimLockValidator()
+        self._claim_lock_validator = (
+            claim_lock_validator or ClaimLockValidator()
+        )
 
     def execute(
         self,
@@ -106,19 +111,105 @@ class ControlledCandidateRewriteOrchestrator:
             ExplicitProtectedTerm,
             ...,
         ] = (),
-        claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
+        claim_lock_enforcement_mode: (
+            ClaimLockEnforcementMode
+        ) = ClaimLockEnforcementMode.STRICT,
+        pre_resolved_claim_lock_preparation: (
+            ClaimLockPreparationResult | None
+        ) = None,
+        effective_claim_lock: ClaimLock | None = None,
+        effective_enforcement_mode: (
+            ClaimLockEnforcementMode | None
+        ) = None,
         pre_generation_hook: (
             Callable[[ClaimLockPreparationResult], None] | None
         ) = None,
     ) -> ControlledCandidateGenerationExecution:
-        claim_lock_preparation = self._claim_lock_preparation_service.prepare(
-            text=request.text,
-            explicit_terms=explicit_protected_terms,
-            enforcement_mode=(claim_lock_enforcement_mode),
-        )
+        if pre_resolved_claim_lock_preparation is not None:
+            if effective_enforcement_mode is None:
+                raise ValueError(
+                    "pre-resolved candidate Claim Lock control "
+                    "requires an effective enforcement mode"
+                )
 
-        if pre_generation_hook is not None:
-            pre_generation_hook(claim_lock_preparation)
+            claim_lock_preparation = (
+                pre_resolved_claim_lock_preparation
+            )
+            resolved_effective_claim_lock = (
+                effective_claim_lock
+            )
+            resolved_effective_enforcement_mode = (
+                effective_enforcement_mode
+            )
+        else:
+            if (
+                effective_claim_lock is not None
+                or effective_enforcement_mode is not None
+            ):
+                raise ValueError(
+                    "effective candidate Claim Lock control "
+                    "requires pre-resolved preparation"
+                )
+
+            preparation_service = (
+                self._claim_lock_preparation_service
+                or ClaimLockPreparationService()
+            )
+
+            claim_lock_preparation = (
+                preparation_service.prepare(
+                    text=request.text,
+                    explicit_terms=explicit_protected_terms,
+                    enforcement_mode=(
+                        claim_lock_enforcement_mode
+                    ),
+                )
+            )
+
+            resolved_effective_claim_lock = None
+            resolved_effective_enforcement_mode = (
+                claim_lock_enforcement_mode
+            )
+
+        if (
+            pre_resolved_claim_lock_preparation is None
+            and pre_generation_hook is not None
+        ):
+            pre_generation_hook(
+                claim_lock_preparation
+            )
+
+        if pre_resolved_claim_lock_preparation is None:
+            resolved_effective_claim_lock = (
+                claim_lock_preparation.claim_lock
+            )
+
+        if (
+            claim_lock_preparation.claim_lock is not None
+            and resolved_effective_claim_lock is None
+        ):
+            raise ValueError(
+                "effective candidate Claim Lock control "
+                "cannot discard prepared protected items"
+            )
+
+        if (
+            resolved_effective_claim_lock is not None
+            and resolved_effective_claim_lock.enforcement_mode
+            is not resolved_effective_enforcement_mode
+        ):
+            raise ValueError(
+                "effective candidate Claim Lock mode "
+                "does not match effective control"
+            )
+
+        if (
+            pre_resolved_claim_lock_preparation is not None
+            and pre_generation_hook is not None
+        ):
+            pre_generation_hook(
+                claim_lock_preparation
+            )
 
         generation = self._candidate_orchestrator.execute(
             request=request,
@@ -127,11 +218,21 @@ class ControlledCandidateRewriteOrchestrator:
 
         controls = self._build_controls(
             generation=generation,
-            claim_lock_preparation=(claim_lock_preparation),
+            claim_lock=(
+                resolved_effective_claim_lock
+            ),
         )
 
-        if claim_lock_enforcement_mode is ClaimLockEnforcementMode.STRICT and any(
-            (not control.v1_failed and control.claim_lock_violated) for control in controls
+        if (
+            resolved_effective_enforcement_mode
+            is ClaimLockEnforcementMode.STRICT
+            and any(
+                (
+                    not control.v1_failed
+                    and control.claim_lock_violated
+                )
+                for control in controls
+            )
         ):
             raise CandidateClaimLockViolationError(
                 controls=controls,
@@ -139,7 +240,15 @@ class ControlledCandidateRewriteOrchestrator:
 
         return ControlledCandidateGenerationExecution(
             generation=generation,
-            claim_lock_preparation=(claim_lock_preparation),
+            claim_lock_preparation=(
+                claim_lock_preparation
+            ),
+            effective_claim_lock=(
+                resolved_effective_claim_lock
+            ),
+            effective_enforcement_mode=(
+                resolved_effective_enforcement_mode
+            ),
             controls=controls,
         )
 
@@ -147,7 +256,7 @@ class ControlledCandidateRewriteOrchestrator:
         self,
         *,
         generation: CandidateGenerationExecution,
-        claim_lock_preparation: (ClaimLockPreparationResult),
+        claim_lock: ClaimLock | None,
     ) -> tuple[
         CandidateControlEvidence,
         ...,
@@ -173,8 +282,10 @@ class ControlledCandidateRewriteOrchestrator:
             )
 
             validation = self._claim_lock_validator.validate(
-                claim_lock=(claim_lock_preparation.claim_lock),
-                rewritten_text=(response.rewritten_text),
+                claim_lock=claim_lock,
+                rewritten_text=(
+                    response.rewritten_text
+                ),
             )
 
             controls.append(

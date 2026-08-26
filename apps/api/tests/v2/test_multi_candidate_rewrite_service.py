@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import pytest
+
 from tests.v2.test_support_authorization_gate import allow_all_workspace_authorization_gate
 from app.domain.models import (
     EditorialQualityDecision,
@@ -15,6 +19,10 @@ from app.domain.models import (
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockRuntimeContext,
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 from app.v2.repositories.memory import (
     InMemoryMembershipRepository,
     InMemoryRewriteHistoryRepository,
@@ -23,6 +31,12 @@ from app.v2.repositories.memory import (
 )
 from app.v2.services.claim_lock_extractor import (
     ExplicitProtectedTerm,
+)
+from app.v2.services.claim_lock_preparation import (
+    ClaimLockPreparationService,
+)
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeService,
 )
 from app.v2.services.multi_candidate_rewrite_service import (
     MultiCandidateWorkspaceRewriteService,
@@ -357,3 +371,176 @@ def test_multi_candidate_service_keeps_original_request_tone_for_history() -> No
     assert result.history.tone == request.tone
 
     assert all(candidate_request.tone != request.tone for candidate_request in workflow.requests)
+
+
+def _enterprise_runtime_context(
+    *,
+    request: RewriteRequest,
+) -> EnterpriseClaimLockRuntimeContext:
+    preparation_service = ClaimLockPreparationService()
+
+    request_preparation = preparation_service.prepare(
+        text=request.text,
+        enforcement_mode=ClaimLockEnforcementMode.STRICT,
+    )
+
+    effective_preparation = preparation_service.prepare(
+        text=request.text,
+        explicit_terms=(
+            ExplicitProtectedTerm(
+                text="Revenue",
+                case_sensitive=False,
+            ),
+        ),
+        enforcement_mode=ClaimLockEnforcementMode.STRICT,
+    )
+
+    effective_claim_lock = (
+        effective_preparation.claim_lock
+    )
+
+    assert effective_claim_lock is not None
+
+    return EnterpriseClaimLockRuntimeContext(
+        request_preparation=request_preparation,
+        effective_claim_lock=effective_claim_lock,
+        workspace_policy_evidence=(
+            EnterpriseClaimLockWorkspacePolicyExecutionEvidence(
+                policy_id="policy_multi_runtime_test",
+                policy_revision=7,
+                enforcement_mode=(
+                    ClaimLockEnforcementMode.STRICT
+                ),
+                applicable_term_ids=(
+                    "workspace_term_revenue",
+                ),
+            )
+        ),
+        request_customization_requested=False,
+        effective_enforcement_mode=(
+            ClaimLockEnforcementMode.STRICT
+        ),
+    )
+
+
+def test_enterprise_runtime_resolves_once_for_all_candidates() -> None:
+    workspace_service, history_service, workflow = (
+        _services()
+    )
+
+    user = workspace_service.create_user(
+        email="runtime-owner@example.com",
+        display_name="Runtime Owner",
+    )
+    workspace = workspace_service.create_workspace(
+        user_id=user.user_id,
+        name="Runtime Workspace",
+    )
+
+    request = _request()
+    runtime_context = _enterprise_runtime_context(
+        request=request,
+    )
+
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+    runtime.resolve.return_value = runtime_context
+
+    service = MultiCandidateWorkspaceRewriteService(
+        history_service=history_service,
+        workflow=workflow,
+        enterprise_claim_lock_runtime_service=runtime,
+        authorization_gate=(
+            allow_all_workspace_authorization_gate()
+        ),
+    )
+
+    result = service.execute(
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        request=request,
+        candidate_count=3,
+        claim_lock_enforcement_mode=None,
+    )
+
+    runtime.resolve.assert_called_once_with(
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        text=request.text,
+        explicit_protected_terms=(),
+        claim_lock_enforcement_mode=None,
+    )
+
+    assert result.claim_lock_runtime_context == (
+        runtime_context
+    )
+
+    assert (
+        result.claim_lock_preparation
+        == runtime_context.request_preparation
+    )
+
+    assert (
+        runtime_context.workspace_policy_evidence
+        is not None
+    )
+    assert (
+        runtime_context.workspace_policy_evidence
+        .policy_revision
+        == 7
+    )
+
+    effective_claim_lock = (
+        runtime_context.effective_claim_lock
+    )
+
+    assert effective_claim_lock is not None
+
+    assert {
+        control.claim_lock_validation.lock_id
+        for control in result.controls
+    } == {
+        effective_claim_lock.lock_id
+    }
+
+    assert result.history.claim_lock_snapshot == (
+        effective_claim_lock
+    )
+
+    assert (
+        result.history.claim_lock_enforcement_mode
+        is runtime_context.effective_enforcement_mode
+    )
+
+    assert result.history.claim_lock_validation is not None
+    assert (
+        result.history.claim_lock_validation.lock_id
+        == effective_claim_lock.lock_id
+    )
+
+
+def test_multi_candidate_rejects_dual_claim_lock_authority() -> None:
+    _workspace_service, history_service, workflow = (
+        _services()
+    )
+
+    runtime = MagicMock(
+        spec=EnterpriseClaimLockRuntimeService,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="must not receive both",
+    ):
+        MultiCandidateWorkspaceRewriteService(
+            history_service=history_service,
+            workflow=workflow,
+            enterprise_claim_lock_runtime_service=runtime,
+            claim_lock_preparation_service=(
+                ClaimLockPreparationService()
+            ),
+            authorization_gate=(
+                allow_all_workspace_authorization_gate()
+            ),
+        )

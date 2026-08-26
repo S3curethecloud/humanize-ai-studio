@@ -24,6 +24,9 @@ from app.v2.domain.claim_lock import (
 from app.v2.domain.claim_lock_audit import (
     ClaimLockValidationAuditSnapshot,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockRuntimeContext,
+)
 from app.v2.domain.models import (
     RewriteHistoryRecord,
 )
@@ -69,6 +72,9 @@ from app.v2.services.claim_lock_validator import (
 from app.v2.services.complex_rewrite_observability import (
     MultiCandidateObservability,
 )
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeService,
+)
 from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
     EnterpriseMultiCandidateQuotaAdmissionService,
 )
@@ -113,6 +119,9 @@ class MultiCandidateWorkspaceRewriteResult:
 
     claim_lock_preparation: ClaimLockPreparationResult
     selected_claim_lock_validation: ClaimLockValidationResult
+    claim_lock_runtime_context: (
+        EnterpriseClaimLockRuntimeContext | None
+    ) = None
 
     voice_guidance: VoiceRewriteGuidance | None = None
 
@@ -130,7 +139,12 @@ class MultiCandidateWorkspaceRewriteService:
         voice_provider: VoiceAwareRewriteProvider | None = None,
         planner: CandidateGenerationPlanner | None = None,
         diff_engine: CandidateDiffEngine | None = None,
-        claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
+        enterprise_claim_lock_runtime_service: (
+            EnterpriseClaimLockRuntimeService | None
+        ) = None,
+        claim_lock_preparation_service: (
+            ClaimLockPreparationService | None
+        ) = None,
         claim_lock_validator: ClaimLockValidator | None = None,
         ranker: CandidateRanker | None = None,
         audit_builder: CandidateAuditBuilder | None = None,
@@ -148,6 +162,20 @@ class MultiCandidateWorkspaceRewriteService:
         self._voice_guidance_service = voice_guidance_service
         self._voice_provider = voice_provider
 
+        if (
+            enterprise_claim_lock_runtime_service is not None
+            and claim_lock_preparation_service is not None
+        ):
+            raise ValueError(
+                "multi-candidate rewrite must not receive both "
+                "enterprise Claim Lock runtime and direct "
+                "preparation authority"
+            )
+
+        self._enterprise_claim_lock_runtime_service = (
+            enterprise_claim_lock_runtime_service
+        )
+
         self._planner = planner or CandidateGenerationPlanner()
         self._diff_engine = diff_engine or CandidateDiffEngine()
         self._ranker = ranker or CandidateRanker()
@@ -157,12 +185,22 @@ class MultiCandidateWorkspaceRewriteService:
             workflow=workflow,
         )
 
-        self._controlled_orchestrator = ControlledCandidateRewriteOrchestrator(
-            candidate_orchestrator=candidate_orchestrator,
-            claim_lock_preparation_service=(
-                claim_lock_preparation_service or ClaimLockPreparationService()
-            ),
-            claim_lock_validator=(claim_lock_validator or ClaimLockValidator()),
+        self._controlled_orchestrator = (
+            ControlledCandidateRewriteOrchestrator(
+                candidate_orchestrator=candidate_orchestrator,
+                claim_lock_preparation_service=(
+                    None
+                    if enterprise_claim_lock_runtime_service
+                    is not None
+                    else (
+                        claim_lock_preparation_service
+                        or ClaimLockPreparationService()
+                    )
+                ),
+                claim_lock_validator=(
+                    claim_lock_validator or ClaimLockValidator()
+                ),
+            )
         )
 
     def execute(
@@ -177,7 +215,9 @@ class MultiCandidateWorkspaceRewriteService:
             ExplicitProtectedTerm,
             ...,
         ] = (),
-        claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
+        claim_lock_enforcement_mode: (
+            ClaimLockEnforcementMode | None
+        ) = None,
     ) -> MultiCandidateWorkspaceRewriteResult:
         started_at = self._duration_clock()
 
@@ -192,6 +232,23 @@ class MultiCandidateWorkspaceRewriteService:
             candidate_count=candidate_count,
         )
 
+        claim_lock_runtime_context = None
+
+        if self._enterprise_claim_lock_runtime_service is not None:
+            claim_lock_runtime_context = (
+                self._enterprise_claim_lock_runtime_service.resolve(
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    text=request.text,
+                    explicit_protected_terms=(
+                        explicit_protected_terms
+                    ),
+                    claim_lock_enforcement_mode=(
+                        claim_lock_enforcement_mode
+                    ),
+                )
+            )
+
         voice_guidance = self._build_voice_guidance(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -203,8 +260,15 @@ class MultiCandidateWorkspaceRewriteService:
             request=request,
             plan=plan,
             voice_guidance=voice_guidance,
-            explicit_protected_terms=(explicit_protected_terms),
-            claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+            claim_lock_runtime_context=(
+                claim_lock_runtime_context
+            ),
+            explicit_protected_terms=(
+                explicit_protected_terms
+            ),
+            claim_lock_enforcement_mode=(
+                claim_lock_enforcement_mode
+            ),
         )
 
         diff_set = self._diff_engine.build_diff_set(
@@ -236,7 +300,7 @@ class MultiCandidateWorkspaceRewriteService:
 
         selected_control = controlled.controls[selected_index]
 
-        claim_lock = controlled.claim_lock_preparation.claim_lock
+        claim_lock = controlled.effective_claim_lock
 
         selected_claim_lock_validation = selected_control.claim_lock_validation
 
@@ -263,7 +327,9 @@ class MultiCandidateWorkspaceRewriteService:
             claim_lock_snapshot=claim_lock,
             claim_lock_validation=(claim_lock_validation_audit),
             claim_lock_enforcement_mode=(
-                claim_lock_enforcement_mode if claim_lock is not None else None
+                controlled.effective_enforcement_mode
+                if claim_lock is not None
+                else None
             ),
             candidate_audit_snapshot=(audit_snapshot),
         )
@@ -295,8 +361,15 @@ class MultiCandidateWorkspaceRewriteService:
             controls=controlled.controls,
             selection=selection,
             audit_snapshot=audit_snapshot,
-            claim_lock_preparation=(controlled.claim_lock_preparation),
-            selected_claim_lock_validation=(selected_claim_lock_validation),
+            claim_lock_preparation=(
+                controlled.claim_lock_preparation
+            ),
+            selected_claim_lock_validation=(
+                selected_claim_lock_validation
+            ),
+            claim_lock_runtime_context=(
+                claim_lock_runtime_context
+            ),
             voice_guidance=voice_guidance,
         )
 
@@ -328,11 +401,16 @@ class MultiCandidateWorkspaceRewriteService:
         request: RewriteRequest,
         plan: CandidateGenerationPlan,
         voice_guidance: VoiceRewriteGuidance | None,
+        claim_lock_runtime_context: (
+            EnterpriseClaimLockRuntimeContext | None
+        ),
         explicit_protected_terms: tuple[
             ExplicitProtectedTerm,
             ...,
         ],
-        claim_lock_enforcement_mode: (ClaimLockEnforcementMode),
+        claim_lock_enforcement_mode: (
+            ClaimLockEnforcementMode | None
+        ),
     ) -> ControlledCandidateGenerationExecution:
         quota_admission = (
             self._multi_candidate_quota_admission
@@ -350,28 +428,57 @@ class MultiCandidateWorkspaceRewriteService:
                 candidate_count=plan.candidate_count,
             )
 
-        if voice_guidance is None:
+        legacy_enforcement_mode = (
+            claim_lock_enforcement_mode
+            or ClaimLockEnforcementMode.STRICT
+        )
+
+        def execute_controlled(
+        ) -> ControlledCandidateGenerationExecution:
+            if claim_lock_runtime_context is not None:
+                return self._controlled_orchestrator.execute(
+                    request=request,
+                    plan=plan,
+                    claim_lock_enforcement_mode=(
+                        legacy_enforcement_mode
+                    ),
+                    pre_resolved_claim_lock_preparation=(
+                        claim_lock_runtime_context.request_preparation
+                    ),
+                    effective_claim_lock=(
+                        claim_lock_runtime_context.effective_claim_lock
+                    ),
+                    effective_enforcement_mode=(
+                        claim_lock_runtime_context.effective_enforcement_mode
+                    ),
+                    pre_generation_hook=pre_generation_hook,
+                )
+
             return self._controlled_orchestrator.execute(
                 request=request,
                 plan=plan,
-                explicit_protected_terms=(explicit_protected_terms),
-                claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
+                explicit_protected_terms=(
+                    explicit_protected_terms
+                ),
+                claim_lock_enforcement_mode=(
+                    legacy_enforcement_mode
+                ),
                 pre_generation_hook=pre_generation_hook,
             )
+
+        if voice_guidance is None:
+            return execute_controlled()
 
         if self._voice_provider is None:
             raise MultiCandidateVoiceUnavailableError(
-                "voice-aware multi-candidate rewrite orchestration is unavailable"
+                "voice-aware multi-candidate rewrite orchestration "
+                "is unavailable"
             )
 
-        with self._voice_provider.use_guidance(voice_guidance):
-            return self._controlled_orchestrator.execute(
-                request=request,
-                plan=plan,
-                explicit_protected_terms=(explicit_protected_terms),
-                claim_lock_enforcement_mode=(claim_lock_enforcement_mode),
-                pre_generation_hook=pre_generation_hook,
-            )
+        with self._voice_provider.use_guidance(
+            voice_guidance
+        ):
+            return execute_controlled()
 
     @staticmethod
     def _selected_index(
