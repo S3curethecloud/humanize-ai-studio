@@ -10,6 +10,14 @@ from pydantic import (
     model_validator,
 )
 
+from app.v2.domain.claim_lock import (
+    ClaimLock,
+    ClaimLockEnforcementMode,
+    ClaimLockOrigin,
+)
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 from app.v2.domain.long_documents import (
     DocumentReconstruction,
     DocumentStructure,
@@ -19,7 +27,18 @@ from app.v2.services.claim_lock_validator import (
     ClaimLockValidationResult,
 )
 
-LONG_DOCUMENT_AUDIT_VERSION: Literal["long-document-audit-v1"] = "long-document-audit-v1"
+LONG_DOCUMENT_AUDIT_VERSION: Literal[
+    "long-document-audit-v1"
+] = "long-document-audit-v1"
+
+LONG_DOCUMENT_AUDIT_V2_VERSION: Literal[
+    "long-document-audit-v2"
+] = "long-document-audit-v2"
+
+LongDocumentAuditVersion = Literal[
+    "long-document-audit-v1",
+    "long-document-audit-v2",
+]
 
 
 class CrossSectionConsistencyAuditCheck(BaseModel):
@@ -83,7 +102,9 @@ class CrossSectionConsistencyAuditSnapshot(BaseModel):
 class LongDocumentAuditRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    audit_version: Literal["long-document-audit-v1"] = LONG_DOCUMENT_AUDIT_VERSION
+    audit_version: LongDocumentAuditVersion = (
+        LONG_DOCUMENT_AUDIT_VERSION
+    )
 
     audit_id: str = Field(
         min_length=1,
@@ -106,6 +127,12 @@ class LongDocumentAuditRecord(BaseModel):
     reconstruction: DocumentReconstruction
 
     claim_lock_validation: ClaimLockValidationResult
+
+    effective_claim_lock: ClaimLock | None = None
+    claim_lock_workspace_policy: (
+        EnterpriseClaimLockWorkspacePolicyExecutionEvidence
+        | None
+    ) = None
 
     cross_section_consistency: CrossSectionConsistencyAuditSnapshot
 
@@ -172,5 +199,118 @@ class LongDocumentAuditRecord(BaseModel):
                 raise ValueError(
                     "long-document audit result source must match exact structure section"
                 )
+
+        if self.audit_version == LONG_DOCUMENT_AUDIT_VERSION:
+            if (
+                self.effective_claim_lock is not None
+                or self.claim_lock_workspace_policy is not None
+            ):
+                raise ValueError(
+                    "long-document audit v1 cannot contain "
+                    "C6 Claim Lock runtime evidence"
+                )
+
+            return self
+
+        effective_claim_lock = self.effective_claim_lock
+        workspace_policy = self.claim_lock_workspace_policy
+
+        if effective_claim_lock is None:
+            if (
+                self.claim_lock_validation.lock_id is not None
+                or self.claim_lock_validation.enforcement_mode
+                is not None
+            ):
+                raise ValueError(
+                    "long-document audit v2 validation cannot "
+                    "reference a Claim Lock when the effective "
+                    "snapshot is absent"
+                )
+
+            if (
+                workspace_policy is not None
+                and workspace_policy.applicable_term_ids
+            ):
+                raise ValueError(
+                    "long-document audit v2 workspace applicable "
+                    "terms require an effective Claim Lock"
+                )
+
+            return self
+
+        if (
+            self.claim_lock_validation.lock_id
+            != effective_claim_lock.lock_id
+        ):
+            raise ValueError(
+                "long-document audit v2 effective Claim Lock "
+                "ID must match validation"
+            )
+
+        if (
+            self.claim_lock_validation.enforcement_mode
+            is not effective_claim_lock.enforcement_mode
+        ):
+            raise ValueError(
+                "long-document audit v2 effective Claim Lock "
+                "mode must match validation"
+            )
+
+        workspace_terms = tuple(
+            term
+            for term in effective_claim_lock.terms
+            if term.provenance.origin
+            is ClaimLockOrigin.WORKSPACE
+        )
+
+        if workspace_policy is None:
+            if workspace_terms:
+                raise ValueError(
+                    "long-document audit v2 workspace-origin "
+                    "terms require workspace policy evidence"
+                )
+
+            return self
+
+        expected_source_reference = (
+            "workspace-claim-lock-policy:"
+            f"{workspace_policy.policy_id}:"
+            f"revision:{workspace_policy.policy_revision}"
+        )
+
+        if any(
+            term.provenance.source_reference
+            != expected_source_reference
+            for term in workspace_terms
+        ):
+            raise ValueError(
+                "long-document audit v2 workspace term "
+                "provenance must match policy revision"
+            )
+
+        effective_workspace_term_ids = tuple(
+            term.term_id
+            for term in workspace_terms
+        )
+
+        if (
+            effective_workspace_term_ids
+            != workspace_policy.applicable_term_ids
+        ):
+            raise ValueError(
+                "long-document audit v2 applicable term IDs "
+                "must match effective workspace contribution"
+            )
+
+        if (
+            workspace_policy.enforcement_mode
+            is ClaimLockEnforcementMode.STRICT
+            and effective_claim_lock.enforcement_mode
+            is not ClaimLockEnforcementMode.STRICT
+        ):
+            raise ValueError(
+                "long-document audit v2 effective enforcement "
+                "cannot weaken workspace policy"
+            )
 
         return self

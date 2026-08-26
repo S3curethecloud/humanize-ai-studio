@@ -6,10 +6,23 @@ from tests.v2.test_support_authorization_gate import (
 )
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+import sqlite3
 
 import pytest
 
+from app.v2.domain.claim_lock import (
+    ClaimLock,
+    ClaimLockEnforcementMode,
+    ClaimLockOrigin,
+    ClaimLockProvenance,
+    ProtectedTerm,
+)
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
+)
 from app.v2.domain.long_document_audit import (
+    LONG_DOCUMENT_AUDIT_V2_VERSION,
     LONG_DOCUMENT_AUDIT_VERSION,
     LongDocumentAuditRecord,
 )
@@ -30,6 +43,7 @@ from app.v2.repositories.memory import (
 from app.v2.services.claim_lock_validator import (
     ClaimLockValidationDecision,
     ClaimLockValidationResult,
+    ClaimLockValidator,
 )
 from app.v2.services.document_reconstructor import (
     DocumentReconstructor,
@@ -587,3 +601,457 @@ def test_service_does_not_mutate_validated_artifacts() -> None:
     assert evaluation.execution.plan.model_dump(mode="json") == plan_before
 
     assert reconstruction.model_dump(mode="json") == reconstruction_before
+
+
+def _workspace_effective_lock(
+    *,
+    enforcement_mode: ClaimLockEnforcementMode = (
+        ClaimLockEnforcementMode.STRICT
+    ),
+    source_reference: str = (
+        "workspace-claim-lock-policy:"
+        "policy_audit_test:revision:7"
+    ),
+) -> ClaimLock:
+    return ClaimLock(
+        lock_id="lock_audit_v2_test",
+        enforcement_mode=enforcement_mode,
+        terms=(
+            ProtectedTerm(
+                term_id="workspace_term_alpha",
+                text="Alpha",
+                case_sensitive=True,
+                provenance=ClaimLockProvenance(
+                    origin=ClaimLockOrigin.WORKSPACE,
+                    source_reference=source_reference,
+                ),
+            ),
+        ),
+    )
+
+
+def _workspace_policy_evidence(
+    *,
+    enforcement_mode: ClaimLockEnforcementMode = (
+        ClaimLockEnforcementMode.STRICT
+    ),
+    applicable_term_ids: tuple[str, ...] = (
+        "workspace_term_alpha",
+    ),
+) -> EnterpriseClaimLockWorkspacePolicyExecutionEvidence:
+    return (
+        EnterpriseClaimLockWorkspacePolicyExecutionEvidence(
+            policy_id="policy_audit_test",
+            policy_revision=7,
+            enforcement_mode=enforcement_mode,
+            applicable_term_ids=applicable_term_ids,
+        )
+    )
+
+
+def _evaluation_for_effective_lock(
+    claim_lock: ClaimLock,
+) -> LongDocumentControlEvaluation:
+    base = _evaluation()
+
+    validation = ClaimLockValidator().validate(
+        claim_lock=claim_lock,
+        rewritten_text=SOURCE,
+    )
+
+    return LongDocumentControlEvaluation(
+        execution=base.execution,
+        claim_lock_validation=validation,
+        cross_section_consistency=(
+            base.cross_section_consistency
+        ),
+        v1_failed_section_ids=(),
+    )
+
+
+def _v2_record(
+    *,
+    effective_claim_lock: ClaimLock,
+    workspace_policy: (
+        EnterpriseClaimLockWorkspacePolicyExecutionEvidence
+        | None
+    ),
+    audit_id: str = "audit_v2_test",
+) -> LongDocumentAuditRecord:
+    evaluation = _evaluation_for_effective_lock(
+        effective_claim_lock
+    )
+
+    reconstruction = DocumentReconstructor().reconstruct(
+        evaluation=evaluation,
+    )
+
+    return LongDocumentAuditRecord(
+        audit_version=LONG_DOCUMENT_AUDIT_V2_VERSION,
+        audit_id=audit_id,
+        workspace_id="workspace_test",
+        user_id="user_test",
+        structure=evaluation.execution.structure,
+        plan=evaluation.execution.plan,
+        reconstruction=reconstruction,
+        claim_lock_validation=(
+            evaluation.claim_lock_validation
+        ),
+        effective_claim_lock=effective_claim_lock,
+        claim_lock_workspace_policy=workspace_policy,
+        cross_section_consistency={
+            "decision": "pass",
+            "checks": (),
+        },
+    )
+
+
+def test_service_writes_v2_exact_runtime_evidence() -> None:
+    effective_claim_lock = _workspace_effective_lock()
+    workspace_policy = _workspace_policy_evidence()
+
+    evaluation = _evaluation_for_effective_lock(
+        effective_claim_lock
+    )
+
+    reconstruction = DocumentReconstructor().reconstruct(
+        evaluation=evaluation,
+    )
+
+    runtime_context = SimpleNamespace(
+        effective_claim_lock=effective_claim_lock,
+        workspace_policy_evidence=workspace_policy,
+    )
+
+    record = LongDocumentAuditService(
+        repository=(
+            InMemoryLongDocumentAuditRepository()
+        ),
+        authorization_gate=(
+            allow_all_workspace_authorization_gate()
+        ),
+    ).record(
+        workspace_id="workspace_test",
+        user_id="user_test",
+        evaluation=evaluation,
+        reconstruction=reconstruction,
+        claim_lock_runtime_context=runtime_context,
+    )
+
+    assert (
+        record.audit_version
+        == LONG_DOCUMENT_AUDIT_V2_VERSION
+    )
+
+    assert (
+        record.effective_claim_lock
+        == effective_claim_lock
+    )
+
+    assert (
+        record.claim_lock_workspace_policy
+        == workspace_policy
+    )
+
+    assert (
+        record.claim_lock_validation.lock_id
+        == effective_claim_lock.lock_id
+    )
+
+    assert (
+        record.claim_lock_validation.enforcement_mode
+        is effective_claim_lock.enforcement_mode
+    )
+
+
+def test_v2_policy_evidence_can_exist_without_effective_lock() -> None:
+    evaluation, reconstruction = _artifacts()
+
+    workspace_policy = _workspace_policy_evidence(
+        enforcement_mode=(
+            ClaimLockEnforcementMode.AUDIT_ONLY
+        ),
+        applicable_term_ids=(),
+    )
+
+    runtime_context = SimpleNamespace(
+        effective_claim_lock=None,
+        workspace_policy_evidence=workspace_policy,
+    )
+
+    record = LongDocumentAuditService(
+        repository=(
+            InMemoryLongDocumentAuditRepository()
+        ),
+        authorization_gate=(
+            allow_all_workspace_authorization_gate()
+        ),
+    ).record(
+        workspace_id="workspace_test",
+        user_id="user_test",
+        evaluation=evaluation,
+        reconstruction=reconstruction,
+        claim_lock_runtime_context=runtime_context,
+    )
+
+    assert (
+        record.audit_version
+        == LONG_DOCUMENT_AUDIT_V2_VERSION
+    )
+
+    assert record.effective_claim_lock is None
+
+    assert (
+        record.claim_lock_workspace_policy
+        == workspace_policy
+    )
+
+    assert (
+        record.claim_lock_workspace_policy
+        .applicable_term_ids
+        == ()
+    )
+
+
+def test_historical_v1_json_remains_readable() -> None:
+    historical = _record(
+        audit_id="audit_historical_v1",
+    )
+
+    payload = historical.model_dump_json()
+
+    loaded = LongDocumentAuditRecord.model_validate_json(
+        payload
+    )
+
+    assert loaded == historical
+
+    assert (
+        loaded.audit_version
+        == LONG_DOCUMENT_AUDIT_VERSION
+    )
+
+    assert loaded.effective_claim_lock is None
+    assert loaded.claim_lock_workspace_policy is None
+
+
+def test_sqlite_restart_round_trip_preserves_v2_evidence(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "audit-v2.sqlite3"
+
+    effective_claim_lock = _workspace_effective_lock()
+    workspace_policy = _workspace_policy_evidence()
+
+    record = _v2_record(
+        effective_claim_lock=effective_claim_lock,
+        workspace_policy=workspace_policy,
+        audit_id="audit_v2_restart",
+    )
+
+    first = SQLiteLongDocumentAuditRepository(
+        database_path=database_path,
+    )
+
+    first.create(record)
+
+    recreated = SQLiteLongDocumentAuditRepository(
+        database_path=database_path,
+    )
+
+    loaded = recreated.get(record.audit_id)
+
+    assert loaded == record
+    assert loaded is not None
+
+    assert (
+        loaded.effective_claim_lock
+        == effective_claim_lock
+    )
+
+    assert (
+        loaded.claim_lock_workspace_policy
+        == workspace_policy
+    )
+
+    with sqlite3.connect(str(database_path)) as connection:
+        columns = tuple(
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(long_document_audit)"
+            ).fetchall()
+        )
+
+    assert columns == (
+        "audit_id",
+        "workspace_id",
+        "user_id",
+        "payload",
+        "created_at",
+    )
+
+
+def test_v2_rejects_effective_lock_id_mismatch() -> None:
+    effective_claim_lock = _workspace_effective_lock()
+    workspace_policy = _workspace_policy_evidence()
+
+    valid = _v2_record(
+        effective_claim_lock=effective_claim_lock,
+        workspace_policy=workspace_policy,
+    )
+
+    payload = valid.model_dump(mode="python")
+
+    payload["claim_lock_validation"] = (
+        valid.claim_lock_validation.model_copy(
+            update={
+                "lock_id": "different_lock_id",
+            }
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "effective Claim Lock ID must match validation"
+        ),
+    ):
+        LongDocumentAuditRecord.model_validate(payload)
+
+
+def test_v2_rejects_effective_lock_mode_mismatch() -> None:
+    effective_claim_lock = _workspace_effective_lock()
+    workspace_policy = _workspace_policy_evidence()
+
+    valid = _v2_record(
+        effective_claim_lock=effective_claim_lock,
+        workspace_policy=workspace_policy,
+    )
+
+    payload = valid.model_dump(mode="python")
+
+    payload["claim_lock_validation"] = (
+        valid.claim_lock_validation.model_copy(
+            update={
+                "enforcement_mode": (
+                    ClaimLockEnforcementMode.AUDIT_ONLY
+                ),
+            }
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "effective Claim Lock mode must match validation"
+        ),
+    ):
+        LongDocumentAuditRecord.model_validate(payload)
+
+
+def test_v2_rejects_workspace_term_wrong_policy_revision() -> None:
+    effective_claim_lock = _workspace_effective_lock(
+        source_reference=(
+            "workspace-claim-lock-policy:"
+            "policy_audit_test:revision:8"
+        ),
+    )
+
+    workspace_policy = _workspace_policy_evidence()
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "workspace term provenance must match "
+            "policy revision"
+        ),
+    ):
+        _v2_record(
+            effective_claim_lock=effective_claim_lock,
+            workspace_policy=workspace_policy,
+        )
+
+
+def test_v2_rejects_applicable_term_id_mismatch() -> None:
+    effective_claim_lock = _workspace_effective_lock()
+
+    workspace_policy = _workspace_policy_evidence(
+        applicable_term_ids=(
+            "different_workspace_term",
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "applicable term IDs must match effective "
+            "workspace contribution"
+        ),
+    ):
+        _v2_record(
+            effective_claim_lock=effective_claim_lock,
+            workspace_policy=workspace_policy,
+        )
+
+
+def test_v2_rejects_workspace_strict_downgrade() -> None:
+    effective_claim_lock = _workspace_effective_lock(
+        enforcement_mode=(
+            ClaimLockEnforcementMode.AUDIT_ONLY
+        ),
+    )
+
+    workspace_policy = _workspace_policy_evidence(
+        enforcement_mode=(
+            ClaimLockEnforcementMode.STRICT
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "effective enforcement cannot weaken "
+            "workspace policy"
+        ),
+    ):
+        _v2_record(
+            effective_claim_lock=effective_claim_lock,
+            workspace_policy=workspace_policy,
+        )
+
+
+def test_v1_rejects_runtime_governance_evidence() -> None:
+    effective_claim_lock = _workspace_effective_lock()
+
+    evaluation = _evaluation_for_effective_lock(
+        effective_claim_lock
+    )
+
+    reconstruction = DocumentReconstructor().reconstruct(
+        evaluation=evaluation,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "long-document audit v1 cannot contain "
+            "C6 Claim Lock runtime evidence"
+        ),
+    ):
+        LongDocumentAuditRecord(
+            audit_version=LONG_DOCUMENT_AUDIT_VERSION,
+            audit_id="audit_invalid_v1_runtime",
+            workspace_id="workspace_test",
+            user_id="user_test",
+            structure=evaluation.execution.structure,
+            plan=evaluation.execution.plan,
+            reconstruction=reconstruction,
+            claim_lock_validation=(
+                evaluation.claim_lock_validation
+            ),
+            effective_claim_lock=effective_claim_lock,
+            cross_section_consistency={
+                "decision": "pass",
+                "checks": (),
+            },
+        )

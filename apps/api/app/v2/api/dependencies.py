@@ -546,7 +546,9 @@ class V2Services:
         )
 
         self.long_document = LongDocumentWorkspaceRewriteService(
-            claim_lock_preparation_service=(self.claim_lock_preparation),
+            enterprise_claim_lock_runtime_service=(
+                self.enterprise_claim_lock_runtime
+            ),
             structure_detector=(DocumentStructureDetector()),
             planner=SectionRewritePlanner(),
             orchestrator=(

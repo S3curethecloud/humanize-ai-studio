@@ -8,6 +8,9 @@ from app.domain.models import RewriteRequest
 from app.v2.domain.claim_lock import (
     ClaimLockEnforcementMode,
 )
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockRuntimeContext,
+)
 from app.v2.domain.long_document_audit import (
     LongDocumentAuditRecord,
 )
@@ -29,6 +32,9 @@ from app.v2.services.document_reconstructor import (
 )
 from app.v2.services.document_structure_detector import (
     DocumentStructureDetector,
+)
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeService,
 )
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
@@ -60,13 +66,21 @@ class LongDocumentWorkspaceRewriteResult:
     evaluation: LongDocumentControlEvaluation
     reconstruction: DocumentReconstruction
     audit: LongDocumentAuditRecord
+    claim_lock_runtime_context: (
+        EnterpriseClaimLockRuntimeContext | None
+    ) = None
 
 
 class LongDocumentWorkspaceRewriteService:
     def __init__(
         self,
         *,
-        claim_lock_preparation_service: ClaimLockPreparationService,
+        enterprise_claim_lock_runtime_service: (
+            EnterpriseClaimLockRuntimeService | None
+        ) = None,
+        claim_lock_preparation_service: (
+            ClaimLockPreparationService | None
+        ) = None,
         structure_detector: DocumentStructureDetector,
         long_document_quota_admission: (
             EnterpriseLongDocumentQuotaAdmissionService | None
@@ -80,7 +94,27 @@ class LongDocumentWorkspaceRewriteService:
         authorization_gate: WorkspaceAuthorizationGate,
         duration_clock: Callable[[], float] = perf_counter,
     ) -> None:
-        self._claim_lock_preparation_service = claim_lock_preparation_service
+        if (
+            enterprise_claim_lock_runtime_service is not None
+            and claim_lock_preparation_service is not None
+        ):
+            raise ValueError(
+                "long-document rewrite must not receive both "
+                "enterprise Claim Lock runtime and direct "
+                "preparation authority"
+            )
+
+        self._enterprise_claim_lock_runtime_service = (
+            enterprise_claim_lock_runtime_service
+        )
+        self._claim_lock_preparation_service = (
+            None
+            if enterprise_claim_lock_runtime_service is not None
+            else (
+                claim_lock_preparation_service
+                or ClaimLockPreparationService()
+            )
+        )
         self._structure_detector = structure_detector
         self._long_document_quota_admission = (
             long_document_quota_admission
@@ -104,7 +138,9 @@ class LongDocumentWorkspaceRewriteService:
             ExplicitProtectedTerm,
             ...,
         ] = (),
-        claim_lock_enforcement_mode: (ClaimLockEnforcementMode) = ClaimLockEnforcementMode.STRICT,
+        claim_lock_enforcement_mode: (
+            ClaimLockEnforcementMode | None
+        ) = None,
     ) -> LongDocumentWorkspaceRewriteResult:
         started_at = self._duration_clock()
 
@@ -114,12 +150,58 @@ class LongDocumentWorkspaceRewriteService:
             permission=EnterprisePermission.REWRITE_EXECUTE,
         )
 
-        claim_lock_preparation = self._claim_lock_preparation_service.prepare(
-            text=request.text,
-            explicit_terms=explicit_protected_terms,
-            enforcement_mode=(claim_lock_enforcement_mode),
-            source_reference=("long-document-rewrite-request"),
-        )
+        claim_lock_runtime_context = None
+
+        if self._enterprise_claim_lock_runtime_service is not None:
+            claim_lock_runtime_context = (
+                self._enterprise_claim_lock_runtime_service.resolve(
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    text=request.text,
+                    explicit_protected_terms=(
+                        explicit_protected_terms
+                    ),
+                    claim_lock_enforcement_mode=(
+                        claim_lock_enforcement_mode
+                    ),
+                    source_reference=(
+                        "long-document-rewrite-request"
+                    ),
+                )
+            )
+
+            claim_lock_preparation = (
+                claim_lock_runtime_context.request_preparation
+            )
+            effective_claim_lock = (
+                claim_lock_runtime_context.effective_claim_lock
+            )
+        else:
+            if self._claim_lock_preparation_service is None:
+                raise RuntimeError(
+                    "long-document rewrite has no Claim Lock "
+                    "preparation authority"
+                )
+
+            legacy_enforcement_mode = (
+                claim_lock_enforcement_mode
+                or ClaimLockEnforcementMode.STRICT
+            )
+
+            claim_lock_preparation = (
+                self._claim_lock_preparation_service.prepare(
+                    text=request.text,
+                    explicit_terms=explicit_protected_terms,
+                    enforcement_mode=(
+                        legacy_enforcement_mode
+                    ),
+                    source_reference=(
+                        "long-document-rewrite-request"
+                    ),
+                )
+            )
+
+            effective_claim_lock = None
 
         structure = self._structure_detector.detect(
             source_text=request.text,
@@ -142,9 +224,14 @@ class LongDocumentWorkspaceRewriteService:
             plan=plan,
         )
 
+        if claim_lock_runtime_context is None:
+            effective_claim_lock = (
+                claim_lock_preparation.claim_lock
+            )
+
         evaluation = self._control_evaluator.evaluate(
             execution=execution,
-            claim_lock=(claim_lock_preparation.claim_lock),
+            claim_lock=effective_claim_lock,
         )
 
         reconstruction = self._reconstructor.reconstruct(
@@ -156,6 +243,9 @@ class LongDocumentWorkspaceRewriteService:
             user_id=user_id,
             evaluation=evaluation,
             reconstruction=reconstruction,
+            claim_lock_runtime_context=(
+                claim_lock_runtime_context
+            ),
         )
 
         if self._observability is not None:
@@ -179,4 +269,7 @@ class LongDocumentWorkspaceRewriteService:
             evaluation=evaluation,
             reconstruction=reconstruction,
             audit=audit,
+            claim_lock_runtime_context=(
+                claim_lock_runtime_context
+            ),
         )

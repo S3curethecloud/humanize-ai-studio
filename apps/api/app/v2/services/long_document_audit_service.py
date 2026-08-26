@@ -3,9 +3,14 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.v2.domain.long_document_audit import (
+    LONG_DOCUMENT_AUDIT_V2_VERSION,
+    LONG_DOCUMENT_AUDIT_VERSION,
     CrossSectionConsistencyAuditCheck,
     CrossSectionConsistencyAuditSnapshot,
     LongDocumentAuditRecord,
+)
+from app.v2.domain.enterprise_claim_lock_runtime import (
+    EnterpriseClaimLockRuntimeContext,
 )
 from app.v2.domain.long_documents import (
     DocumentReconstruction,
@@ -45,6 +50,9 @@ class LongDocumentAuditService:
         user_id: str,
         evaluation: LongDocumentControlEvaluation,
         reconstruction: DocumentReconstruction,
+        claim_lock_runtime_context: (
+            EnterpriseClaimLockRuntimeContext | None
+        ) = None,
     ) -> LongDocumentAuditRecord:
         self._authorization_gate.require(
             workspace_id=workspace_id,
@@ -75,6 +83,11 @@ class LongDocumentAuditService:
         )
 
         record = LongDocumentAuditRecord(
+            audit_version=(
+                LONG_DOCUMENT_AUDIT_V2_VERSION
+                if claim_lock_runtime_context is not None
+                else LONG_DOCUMENT_AUDIT_VERSION
+            ),
             audit_id=(f"long_document_audit_{uuid4().hex}"),
             workspace_id=workspace_id,
             user_id=user_id,
@@ -82,6 +95,16 @@ class LongDocumentAuditService:
             plan=execution.plan,
             reconstruction=reconstruction,
             claim_lock_validation=(evaluation.claim_lock_validation),
+            effective_claim_lock=(
+                claim_lock_runtime_context.effective_claim_lock
+                if claim_lock_runtime_context is not None
+                else None
+            ),
+            claim_lock_workspace_policy=(
+                claim_lock_runtime_context.workspace_policy_evidence
+                if claim_lock_runtime_context is not None
+                else None
+            ),
             cross_section_consistency=(cross_section_snapshot),
             v1_failed_section_ids=(evaluation.v1_failed_section_ids),
         )
