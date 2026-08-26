@@ -5,6 +5,9 @@ import pytest
 from app.v2.api.dependencies import (
     V2Services,
 )
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeService,
+)
 from app.v2.config.persistence import (
     PersistenceBackend,
     V2PersistenceSettings,
@@ -213,3 +216,49 @@ def test_sqlite_workspace_creation_rolls_back_on_membership_failure(
         ).fetchone()[0]
 
     assert count == 0
+
+
+def test_service_container_builds_one_canonical_claim_lock_runtime() -> None:
+    settings = V2PersistenceSettings(
+        backend=PersistenceBackend.MEMORY,
+        sqlite_path=None,
+        database_url=None,
+    )
+
+    services = V2Services(
+        workflow=RewriteWorkflow(),
+        persistence_settings=settings,
+    )
+
+    runtime = services.enterprise_claim_lock_runtime
+
+    assert isinstance(
+        runtime,
+        EnterpriseClaimLockRuntimeService,
+    )
+
+    runtime_instances = tuple(
+        value
+        for value in vars(services).values()
+        if isinstance(
+            value,
+            EnterpriseClaimLockRuntimeService,
+        )
+    )
+
+    assert runtime_instances == (runtime,)
+
+    assert (
+        runtime._policies
+        is services.enterprise_claim_lock_policies
+    )
+
+    assert (
+        runtime._authorization_gate
+        is services.workspace_authorization
+    )
+
+    assert (
+        runtime._preparation_service
+        is services.claim_lock_preparation
+    )

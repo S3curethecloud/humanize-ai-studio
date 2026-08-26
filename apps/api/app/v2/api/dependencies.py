@@ -66,6 +66,9 @@ from app.v2.services.enterprise_authorization_runtime_factory import (
 from app.v2.services.enterprise_claim_lock_admin_service import (
     EnterpriseClaimLockAdminService,
 )
+from app.v2.services.enterprise_claim_lock_runtime_service import (
+    EnterpriseClaimLockRuntimeService,
+)
 from app.v2.services.enterprise_claim_lock_policy_repository_factory import (
     build_enterprise_claim_lock_policy_repository,
 )
@@ -454,6 +457,14 @@ class V2Services:
             )
 
         self.claim_lock_preparation = ClaimLockPreparationService()
+
+        self.enterprise_claim_lock_runtime = (
+            EnterpriseClaimLockRuntimeService(
+                policies=self.enterprise_claim_lock_policies,
+                authorization_gate=self.workspace_authorization,
+                preparation_service=self.claim_lock_preparation,
+            )
+        )
 
         single_rewrite_quota_admission = None
         multi_candidate_quota_admission = None
