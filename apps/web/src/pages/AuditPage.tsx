@@ -13,6 +13,9 @@ import {
   type RewriteHistoryRecord
 } from "../api/history";
 
+import ClaimLockPersistedEvidence
+  from "../components/ClaimLockPersistedEvidence";
+
 interface AuditPageProps {
   accessContext: EnterpriseAccessContextState;
 }
@@ -281,6 +284,23 @@ export default function AuditPage({
             <h3>Rewritten text</h3>
             <p>{selected.rewritten_text}</p>
           </div>
+
+          <ClaimLockPersistedEvidence
+            snapshot={
+              selected.claim_lock_snapshot
+            }
+            validation={
+              selected.claim_lock_validation
+            }
+            enforcementMode={
+              selected
+                .claim_lock_enforcement_mode
+            }
+            workspacePolicy={
+              selected
+                .claim_lock_workspace_policy
+            }
+          />
         </section>
       )}
     </div>
