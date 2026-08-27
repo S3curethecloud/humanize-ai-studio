@@ -5,14 +5,19 @@ import {
   useState
 } from "react";
 
+import type {
+  ClaimLockEnforcementMode,
+  ClaimLockRequestCustomization
+} from "../api/claimLock";
 import {
-  submitRewrite,
+  submitWorkspaceRewrite,
   type RewriteRequest,
-  type RewriteResponse
+  type WorkspaceRewriteResponse
 } from "../api/rewrite";
 import type {
   EnterpriseAccessContextState
 } from "../app/useEnterpriseAccessContext";
+import ClaimLockExecutionEvidence from "../components/ClaimLockExecutionEvidence";
 import { RewriteAuditDetails } from "../components/RewriteAuditDetails";
 import { RewriteDecisionCard } from "../components/RewriteDecisionCard";
 
@@ -29,9 +34,126 @@ const INITIAL_REQUEST: RewriteRequest = {
   preserve_dates: true
 };
 
+type RequestClaimLockMode =
+  | ""
+  | ClaimLockEnforcementMode;
+
+interface RequestClaimLockTermDraft {
+  text: string;
+  case_sensitive: boolean;
+}
+
 interface SubmittedResult {
   request: RewriteRequest;
-  response: RewriteResponse;
+  claimLock?: ClaimLockRequestCustomization;
+  response: WorkspaceRewriteResponse;
+}
+
+function buildClaimLockCustomization(
+  terms: RequestClaimLockTermDraft[],
+  mode: RequestClaimLockMode
+): ClaimLockRequestCustomization | undefined {
+  const protectedTerms = terms
+    .map((term) => ({
+      text: term.text.trim(),
+      case_sensitive: term.case_sensitive
+    }))
+    .filter(
+      (term) => term.text !== ""
+    );
+
+  if (
+    protectedTerms.length === 0 &&
+    mode === ""
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(protectedTerms.length > 0
+      ? {
+          protected_terms: protectedTerms
+        }
+      : {}),
+    ...(mode !== ""
+      ? {
+          claim_lock_enforcement_mode: mode
+        }
+      : {})
+  };
+}
+
+function cloneClaimLockCustomization(
+  customization:
+    ClaimLockRequestCustomization | undefined
+): ClaimLockRequestCustomization | undefined {
+  if (customization === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(customization.protected_terms !== undefined
+      ? {
+          protected_terms:
+            customization.protected_terms.map(
+              (term) => ({
+                ...term
+              })
+            )
+        }
+      : {}),
+    ...(customization
+      .claim_lock_enforcement_mode !== undefined
+      ? {
+          claim_lock_enforcement_mode:
+            customization
+              .claim_lock_enforcement_mode
+        }
+      : {})
+  };
+}
+
+function customizationsMatch(
+  current:
+    ClaimLockRequestCustomization | undefined,
+  submitted:
+    ClaimLockRequestCustomization | undefined
+): boolean {
+  if (
+    current === undefined ||
+    submitted === undefined
+  ) {
+    return (
+      current === undefined &&
+      submitted === undefined
+    );
+  }
+
+  if (
+    current.claim_lock_enforcement_mode !==
+    submitted.claim_lock_enforcement_mode
+  ) {
+    return false;
+  }
+
+  const currentTerms =
+    current.protected_terms ?? [];
+  const submittedTerms =
+    submitted.protected_terms ?? [];
+
+  if (
+    currentTerms.length !==
+    submittedTerms.length
+  ) {
+    return false;
+  }
+
+  return currentTerms.every(
+    (term, index) =>
+      term.text === submittedTerms[index]?.text &&
+      term.case_sensitive ===
+        submittedTerms[index]?.case_sensitive
+  );
 }
 
 const INTENSITY_LABELS: Record<
@@ -86,6 +208,13 @@ export default function RewriteStudioPage({
 }: RewriteStudioPageProps) {
   const [request, setRequest] =
     useState<RewriteRequest>(INITIAL_REQUEST);
+
+  const [claimLockMode, setClaimLockMode] =
+    useState<RequestClaimLockMode>("");
+
+  const [claimLockTerms, setClaimLockTerms] =
+    useState<RequestClaimLockTermDraft[]>([]);
+
   const [submittedResult, setSubmittedResult] =
     useState<SubmittedResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,18 +223,50 @@ export default function RewriteStudioPage({
     "idle" | "copied" | "failed"
   >("idle");
 
-  const response = submittedResult?.response ?? null;
+  const canCustomizeClaimLock =
+    accessContext.context?.permissions.includes(
+      "claim_lock.use"
+    ) ?? false;
+
+  const currentClaimLockCustomization =
+    useMemo(
+      () =>
+        canCustomizeClaimLock
+          ? buildClaimLockCustomization(
+              claimLockTerms,
+              claimLockMode
+            )
+          : undefined,
+      [
+        canCustomizeClaimLock,
+        claimLockMode,
+        claimLockTerms
+      ]
+    );
+
+  const response =
+    submittedResult?.response.rewrite ?? null;
 
   const isResultStale = useMemo(() => {
     if (submittedResult === null) {
       return false;
     }
 
-    return !requestsMatch(
-      request,
-      submittedResult.request
+    return (
+      !requestsMatch(
+        request,
+        submittedResult.request
+      ) ||
+      !customizationsMatch(
+        currentClaimLockCustomization,
+        submittedResult.claimLock
+      )
     );
-  }, [request, submittedResult]);
+  }, [
+    currentClaimLockCustomization,
+    request,
+    submittedResult
+  ]);
 
   useEffect(() => {
     setCopyState("idle");
@@ -121,6 +282,10 @@ export default function RewriteStudioPage({
     setCopyState("idle");
 
     const requestSnapshot = cloneRequest(request);
+    const claimLockSnapshot =
+      cloneClaimLockCustomization(
+        currentClaimLockCustomization
+      );
 
     if (
       accessContext.status !== "connected" ||
@@ -135,14 +300,17 @@ export default function RewriteStudioPage({
     }
 
     try {
-      const result = await submitRewrite(
-        accessContext.workspaceId,
-        accessContext.userId,
-        requestSnapshot
-      );
+      const result =
+        await submitWorkspaceRewrite(
+          accessContext.workspaceId,
+          accessContext.userId,
+          requestSnapshot,
+          claimLockSnapshot
+        );
 
       setSubmittedResult({
         request: requestSnapshot,
+        claimLock: claimLockSnapshot,
         response: result
       });
     } catch (caughtError) {
@@ -323,6 +491,163 @@ export default function RewriteStudioPage({
               </label>
             </div>
 
+            {canCustomizeClaimLock && (
+              <section className="enterprise-claim-lock-request-customization">
+                <div className="enterprise-claim-lock-request-customization__header">
+                  <div>
+                    <p className="eyebrow">
+                      Optional Claim Lock
+                    </p>
+                    <strong>
+                      Request-specific protection
+                    </strong>
+                    <span>
+                      Workspace policy remains
+                      server-resolved and is not
+                      copied into this request.
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={isSubmitting}
+                    onClick={() =>
+                      setClaimLockTerms(
+                        (current) => [
+                          ...current,
+                          {
+                            text: "",
+                            case_sensitive: true
+                          }
+                        ]
+                      )
+                    }
+                  >
+                    Add protected term
+                  </button>
+                </div>
+
+                <label>
+                  Request enforcement mode
+                  <select
+                    value={claimLockMode}
+                    disabled={isSubmitting}
+                    onChange={(event) =>
+                      setClaimLockMode(
+                        event.target.value as
+                          RequestClaimLockMode
+                      )
+                    }
+                  >
+                    <option value="">
+                      Server-determined
+                    </option>
+                    <option value="strict">
+                      Strict
+                    </option>
+                    <option value="audit_only">
+                      Audit only
+                    </option>
+                  </select>
+                </label>
+
+                {claimLockTerms.length > 0 && (
+                  <div className="enterprise-claim-lock-request-term-list">
+                    {claimLockTerms.map(
+                      (term, index) => (
+                        <div
+                          className="enterprise-claim-lock-request-term-row"
+                          key={index}
+                        >
+                          <label>
+                            Protected term
+                            <input
+                              type="text"
+                              value={term.text}
+                              disabled={isSubmitting}
+                              maxLength={1000}
+                              onChange={(event) =>
+                                setClaimLockTerms(
+                                  (current) =>
+                                    current.map(
+                                      (
+                                        currentTerm,
+                                        currentIndex
+                                      ) =>
+                                        currentIndex ===
+                                        index
+                                          ? {
+                                              ...currentTerm,
+                                              text:
+                                                event
+                                                  .target
+                                                  .value
+                                            }
+                                          : currentTerm
+                                    )
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label className="enterprise-claim-lock-request-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={
+                                term.case_sensitive
+                              }
+                              disabled={isSubmitting}
+                              onChange={(event) =>
+                                setClaimLockTerms(
+                                  (current) =>
+                                    current.map(
+                                      (
+                                        currentTerm,
+                                        currentIndex
+                                      ) =>
+                                        currentIndex ===
+                                        index
+                                          ? {
+                                              ...currentTerm,
+                                              case_sensitive:
+                                                event
+                                                  .target
+                                                  .checked
+                                            }
+                                          : currentTerm
+                                    )
+                                )
+                              }
+                            />
+                            Case sensitive
+                          </label>
+
+                          <button
+                            type="button"
+                            className="secondary-action"
+                            disabled={isSubmitting}
+                            onClick={() =>
+                              setClaimLockTerms(
+                                (current) =>
+                                  current.filter(
+                                    (_, currentIndex) =>
+                                      currentIndex !==
+                                      index
+                                  )
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
             <button
               className="primary-action"
               disabled={
@@ -472,6 +797,14 @@ export default function RewriteStudioPage({
                     response={response}
                   />
                 </div>
+
+                <ClaimLockExecutionEvidence
+                  evidence={
+                    submittedResult
+                      .response
+                      .claim_lock
+                  }
+                />
               </>
             ) : (
               <section className="empty-state">

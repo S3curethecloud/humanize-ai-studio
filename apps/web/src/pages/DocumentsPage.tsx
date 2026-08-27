@@ -1,7 +1,12 @@
 import {
+  useMemo,
   useState
 } from "react";
 
+import type {
+  ClaimLockEnforcementMode,
+  ClaimLockRequestCustomization
+} from "../api/claimLock";
 import type {
   EnterpriseAccessContextState
 } from "../app/useEnterpriseAccessContext";
@@ -10,6 +15,7 @@ import {
   submitLongDocumentRewrite,
   type LongDocumentRewriteResponse
 } from "../api/longDocument";
+import ClaimLockExecutionEvidence from "../components/ClaimLockExecutionEvidence";
 
 interface DocumentsPageProps {
   accessContext: EnterpriseAccessContextState;
@@ -27,6 +33,134 @@ Operational Handoff
 
 Production readiness included testing, observability, runbook documentation, and stakeholder handoff.`;
 
+type DocumentIntensity =
+  | "light_edit"
+  | "natural_rewrite"
+  | "deep_reconstruction";
+
+type RequestClaimLockMode =
+  | ""
+  | ClaimLockEnforcementMode;
+
+interface RequestClaimLockTermDraft {
+  text: string;
+  case_sensitive: boolean;
+}
+
+interface SubmittedDocumentResult {
+  text: string;
+  intensity: DocumentIntensity;
+  claimLock?: ClaimLockRequestCustomization;
+  response: LongDocumentRewriteResponse;
+}
+
+function buildClaimLockCustomization(
+  terms: RequestClaimLockTermDraft[],
+  mode: RequestClaimLockMode
+): ClaimLockRequestCustomization | undefined {
+  const protectedTerms = terms
+    .map((term) => ({
+      text: term.text.trim(),
+      case_sensitive: term.case_sensitive
+    }))
+    .filter(
+      (term) => term.text !== ""
+    );
+
+  if (
+    protectedTerms.length === 0 &&
+    mode === ""
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(protectedTerms.length > 0
+      ? {
+          protected_terms: protectedTerms
+        }
+      : {}),
+    ...(mode !== ""
+      ? {
+          claim_lock_enforcement_mode: mode
+        }
+      : {})
+  };
+}
+
+function cloneClaimLockCustomization(
+  customization:
+    ClaimLockRequestCustomization | undefined
+): ClaimLockRequestCustomization | undefined {
+  if (customization === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(customization.protected_terms !== undefined
+      ? {
+          protected_terms:
+            customization.protected_terms.map(
+              (term) => ({
+                ...term
+              })
+            )
+        }
+      : {}),
+    ...(customization
+      .claim_lock_enforcement_mode !== undefined
+      ? {
+          claim_lock_enforcement_mode:
+            customization
+              .claim_lock_enforcement_mode
+        }
+      : {})
+  };
+}
+
+function customizationsMatch(
+  current:
+    ClaimLockRequestCustomization | undefined,
+  submitted:
+    ClaimLockRequestCustomization | undefined
+): boolean {
+  if (
+    current === undefined ||
+    submitted === undefined
+  ) {
+    return (
+      current === undefined &&
+      submitted === undefined
+    );
+  }
+
+  if (
+    current.claim_lock_enforcement_mode !==
+    submitted.claim_lock_enforcement_mode
+  ) {
+    return false;
+  }
+
+  const currentTerms =
+    current.protected_terms ?? [];
+  const submittedTerms =
+    submitted.protected_terms ?? [];
+
+  if (
+    currentTerms.length !==
+    submittedTerms.length
+  ) {
+    return false;
+  }
+
+  return currentTerms.every(
+    (term, index) =>
+      term.text === submittedTerms[index]?.text &&
+      term.case_sensitive ===
+        submittedTerms[index]?.case_sensitive
+  );
+}
+
 export default function DocumentsPage({
   accessContext
 }: DocumentsPageProps) {
@@ -34,14 +168,18 @@ export default function DocumentsPage({
     useState(DEFAULT_TEXT);
 
   const [intensity, setIntensity] =
-    useState<
-      "light_edit" |
-      "natural_rewrite" |
-      "deep_reconstruction"
-    >("natural_rewrite");
+    useState<DocumentIntensity>(
+      "natural_rewrite"
+    );
 
-  const [result, setResult] =
-    useState<LongDocumentRewriteResponse | null>(
+  const [claimLockMode, setClaimLockMode] =
+    useState<RequestClaimLockMode>("");
+
+  const [claimLockTerms, setClaimLockTerms] =
+    useState<RequestClaimLockTermDraft[]>([]);
+
+  const [submittedResult, setSubmittedResult] =
+    useState<SubmittedDocumentResult | null>(
       null
     );
 
@@ -55,6 +193,55 @@ export default function DocumentsPage({
     accessContext.status === "connected" &&
     accessContext.workspaceId !== null &&
     accessContext.userId !== null;
+
+  const canCustomizeClaimLock =
+    accessContext.context?.permissions.includes(
+      "claim_lock.use"
+    ) ?? false;
+
+  const currentClaimLockCustomization =
+    useMemo(
+      () =>
+        canCustomizeClaimLock
+          ? buildClaimLockCustomization(
+              claimLockTerms,
+              claimLockMode
+            )
+          : undefined,
+      [
+        canCustomizeClaimLock,
+        claimLockMode,
+        claimLockTerms
+      ]
+    );
+
+  const result =
+    submittedResult?.response ?? null;
+
+  const isResultStale =
+    useMemo(
+      () => {
+        if (submittedResult === null) {
+          return false;
+        }
+
+        return (
+          text !== submittedResult.text ||
+          intensity !==
+            submittedResult.intensity ||
+          !customizationsMatch(
+            currentClaimLockCustomization,
+            submittedResult.claimLock
+          )
+        );
+      },
+      [
+        currentClaimLockCustomization,
+        intensity,
+        submittedResult,
+        text
+      ]
+    );
 
   async function handleRewrite() {
     if (
@@ -75,6 +262,13 @@ export default function DocumentsPage({
       return;
     }
 
+    const textSnapshot = text;
+    const intensitySnapshot = intensity;
+    const claimLockSnapshot =
+      cloneClaimLockCustomization(
+        currentClaimLockCustomization
+      );
+
     setBusy(true);
     setMessage(
       "Executing governed long-document rewrite."
@@ -86,25 +280,31 @@ export default function DocumentsPage({
           accessContext.workspaceId,
           accessContext.userId,
           {
-            text: text.trim(),
+            text: textSnapshot.trim(),
             document_type:
               "technical_document",
             audience:
               "enterprise stakeholders",
             tone:
               "clear, natural, and professional",
-            intensity,
+            intensity: intensitySnapshot,
             preserve_numbers: true,
             preserve_dates: true
-          }
+          },
+          claimLockSnapshot
         );
 
-      setResult(next);
+      setSubmittedResult({
+        text: textSnapshot,
+        intensity: intensitySnapshot,
+        claimLock: claimLockSnapshot,
+        response: next
+      });
       setMessage(
         "Long-document reconstruction completed."
       );
     } catch (error) {
-      setResult(null);
+      setSubmittedResult(null);
       setMessage(
         error instanceof Error
           ? error.message
@@ -205,6 +405,163 @@ export default function DocumentsPage({
             />
           </label>
 
+          {canCustomizeClaimLock && (
+            <section className="enterprise-claim-lock-request-customization">
+              <div className="enterprise-claim-lock-request-customization__header">
+                <div>
+                  <p className="enterprise-eyebrow">
+                    Optional Claim Lock
+                  </p>
+                  <strong>
+                    Request-specific protection
+                  </strong>
+                  <span>
+                    Workspace policy remains
+                    server-resolved and is not
+                    copied into this request.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="enterprise-secondary-button"
+                  disabled={busy}
+                  onClick={() =>
+                    setClaimLockTerms(
+                      (current) => [
+                        ...current,
+                        {
+                          text: "",
+                          case_sensitive: true
+                        }
+                      ]
+                    )
+                  }
+                >
+                  Add protected term
+                </button>
+              </div>
+
+              <label>
+                Request enforcement mode
+                <select
+                  value={claimLockMode}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setClaimLockMode(
+                      event.target.value as
+                        RequestClaimLockMode
+                    )
+                  }
+                >
+                  <option value="">
+                    Server-determined
+                  </option>
+                  <option value="strict">
+                    Strict
+                  </option>
+                  <option value="audit_only">
+                    Audit only
+                  </option>
+                </select>
+              </label>
+
+              {claimLockTerms.length > 0 && (
+                <div className="enterprise-claim-lock-request-term-list">
+                  {claimLockTerms.map(
+                    (term, index) => (
+                      <div
+                        className="enterprise-claim-lock-request-term-row"
+                        key={index}
+                      >
+                        <label>
+                          Protected term
+                          <input
+                            type="text"
+                            maxLength={1000}
+                            value={term.text}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setClaimLockTerms(
+                                (current) =>
+                                  current.map(
+                                    (
+                                      currentTerm,
+                                      currentIndex
+                                    ) =>
+                                      currentIndex ===
+                                      index
+                                        ? {
+                                            ...currentTerm,
+                                            text:
+                                              event
+                                                .target
+                                                .value
+                                          }
+                                        : currentTerm
+                                  )
+                              )
+                            }
+                          />
+                        </label>
+
+                        <label className="enterprise-claim-lock-request-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={
+                              term.case_sensitive
+                            }
+                            disabled={busy}
+                            onChange={(event) =>
+                              setClaimLockTerms(
+                                (current) =>
+                                  current.map(
+                                    (
+                                      currentTerm,
+                                      currentIndex
+                                    ) =>
+                                      currentIndex ===
+                                      index
+                                        ? {
+                                            ...currentTerm,
+                                            case_sensitive:
+                                              event
+                                                .target
+                                                .checked
+                                          }
+                                        : currentTerm
+                                  )
+                              )
+                            }
+                          />
+                          Case sensitive
+                        </label>
+
+                        <button
+                          type="button"
+                          className="enterprise-secondary-button"
+                          disabled={busy}
+                          onClick={() =>
+                            setClaimLockTerms(
+                              (current) =>
+                                current.filter(
+                                  (_, currentIndex) =>
+                                    currentIndex !==
+                                    index
+                                )
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
           <button
             type="button"
             className="enterprise-secondary-button"
@@ -213,13 +570,32 @@ export default function DocumentsPage({
               void handleRewrite()
             }
           >
-            Rewrite long document
+            {isResultStale
+              ? "Rewrite again with updated inputs"
+              : "Rewrite long document"}
           </button>
         </div>
       </section>
 
-      {result && (
+      {result && submittedResult && (
         <>
+          {isResultStale && (
+            <section className="enterprise-analytics-state enterprise-claim-lock-execution-stale">
+              <div>
+                <h2>
+                  Displayed document result is stale
+                </h2>
+                <p>
+                  Document text, rewrite intensity, or
+                  request Claim Lock controls changed
+                  after this execution. Run again before
+                  treating the result or evidence as
+                  current.
+                </p>
+              </div>
+            </section>
+          )}
+
           <section className="enterprise-dashboard-section">
             <div className="enterprise-section__heading">
               <div>
@@ -333,6 +709,10 @@ export default function DocumentsPage({
               </article>
             </div>
           </section>
+
+          <ClaimLockExecutionEvidence
+            evidence={result.claim_lock}
+          />
         </>
       )}
     </div>
