@@ -1,3 +1,11 @@
+import type {
+  ClaimLockRequestCustomization,
+  ClaimLockRewriteEvidence
+} from "./claimLock";
+import type {
+  RewriteHistoryRecord
+} from "./history";
+
 export type RewriteDecision =
   | "no_change"
   | "minimal_edit"
@@ -92,11 +100,46 @@ export interface RewriteRequest {
   preserve_dates: boolean;
 }
 
-export async function submitRewrite(
+export interface WorkspaceRewriteResponse {
+  rewrite: RewriteResponse;
+  history: RewriteHistoryRecord;
+  voice?: unknown | null;
+  claim_lock?: ClaimLockRewriteEvidence | null;
+  multi_candidate?: unknown | null;
+}
+
+function claimLockRequestFields(
+  customization:
+    ClaimLockRequestCustomization | undefined
+): Record<string, unknown> {
+  if (customization === undefined) {
+    return {};
+  }
+
+  return {
+    ...(customization.protected_terms !== undefined
+      ? {
+          protected_terms:
+            customization.protected_terms
+        }
+      : {}),
+    ...(customization
+      .claim_lock_enforcement_mode !== undefined
+      ? {
+          claim_lock_enforcement_mode:
+            customization
+              .claim_lock_enforcement_mode
+        }
+      : {})
+  };
+}
+
+export async function submitWorkspaceRewrite(
   workspaceId: string,
   userId: string,
-  request: RewriteRequest
-): Promise<RewriteResponse> {
+  request: RewriteRequest,
+  claimLock?: ClaimLockRequestCustomization
+): Promise<WorkspaceRewriteResponse> {
   const response = await fetch(
     `/api/v2/workspaces/${encodeURIComponent(
       workspaceId
@@ -108,13 +151,15 @@ export async function submitRewrite(
       },
       body: JSON.stringify({
         user_id: userId,
-        rewrite: request
+        rewrite: request,
+        ...claimLockRequestFields(claimLock)
       })
     }
   );
 
   if (!response.ok) {
-    let detail = `Rewrite failed with status ${response.status}.`;
+    let detail =
+      `Rewrite failed with status ${response.status}.`;
 
     try {
       const body = (await response.json()) as {
@@ -131,9 +176,20 @@ export async function submitRewrite(
     throw new Error(detail);
   }
 
-  const payload = (await response.json()) as {
-    rewrite: RewriteResponse;
-  };
+  return (await response.json()) as
+    WorkspaceRewriteResponse;
+}
+
+export async function submitRewrite(
+  workspaceId: string,
+  userId: string,
+  request: RewriteRequest
+): Promise<RewriteResponse> {
+  const payload = await submitWorkspaceRewrite(
+    workspaceId,
+    userId,
+    request
+  );
 
   return payload.rewrite;
 }

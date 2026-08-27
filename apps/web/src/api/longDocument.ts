@@ -1,3 +1,8 @@
+import type {
+  ClaimLockRequestCustomization,
+  ClaimLockRewriteEvidence
+} from "./claimLock";
+
 export interface LongDocumentSection {
   section_id: string;
   ordinal: number;
@@ -38,7 +43,7 @@ export interface LongDocumentAuditRecord {
 export interface LongDocumentRewriteResponse {
   reconstruction: DocumentReconstruction;
   audit: LongDocumentAuditRecord;
-  claim_lock?: unknown;
+  claim_lock?: ClaimLockRewriteEvidence | null;
 }
 
 export interface LongDocumentRewriteRequest {
@@ -62,7 +67,8 @@ export interface LongDocumentRewriteRequest {
 export async function submitLongDocumentRewrite(
   workspaceId: string,
   userId: string,
-  rewrite: LongDocumentRewriteRequest
+  rewrite: LongDocumentRewriteRequest,
+  claimLock?: ClaimLockRequestCustomization
 ): Promise<LongDocumentRewriteResponse> {
   const response = await fetch(
     `/api/v2/workspaces/${encodeURIComponent(
@@ -75,7 +81,21 @@ export async function submitLongDocumentRewrite(
       },
       body: JSON.stringify({
         user_id: userId,
-        rewrite
+        rewrite,
+        ...(claimLock?.protected_terms !== undefined
+          ? {
+              protected_terms:
+                claimLock.protected_terms
+            }
+          : {}),
+        ...(claimLock
+          ?.claim_lock_enforcement_mode !== undefined
+          ? {
+              claim_lock_enforcement_mode:
+                claimLock
+                  .claim_lock_enforcement_mode
+            }
+          : {})
       })
     }
   );
