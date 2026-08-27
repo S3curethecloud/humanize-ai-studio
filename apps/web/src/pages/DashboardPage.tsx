@@ -34,8 +34,8 @@ const SURFACES = [
   {
     title: "Governance",
     description:
-      "Claim Lock, audit, and EvalOps remain dedicated governed application surfaces.",
-    status: "Planned",
+      "Claim Lock policy administration is available; audit remains separate and EvalOps remains staged.",
+    status: "Available",
     href: routeHref("claim-lock")
   },
   {

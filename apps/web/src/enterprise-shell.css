@@ -986,3 +986,165 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* V2.12 F2 Claim Lock governance */
+
+.enterprise-claim-lock {
+  display: grid;
+  gap: 28px;
+}
+
+.enterprise-claim-lock-status {
+  width: fit-content;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: rgba(9, 14, 28, 0.72);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.enterprise-claim-lock-status--active {
+  border-color: rgba(83, 223, 160, 0.3);
+  color: var(--green);
+}
+
+.enterprise-claim-lock-status--disabled {
+  border-color: rgba(255, 184, 92, 0.3);
+}
+
+.enterprise-claim-lock-status--archived {
+  border-color: rgba(255, 127, 139, 0.3);
+  color: var(--danger);
+}
+
+.enterprise-claim-lock-form {
+  display: grid;
+  gap: 22px;
+}
+
+.enterprise-claim-lock-field-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.enterprise-claim-lock-form input[type="text"],
+.enterprise-claim-lock-form select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: #0a1020;
+  outline: none;
+  font: inherit;
+}
+
+.enterprise-claim-lock-form input[type="text"]:focus,
+.enterprise-claim-lock-form select:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px var(--cyan-soft);
+}
+
+.enterprise-claim-lock-form input:disabled,
+.enterprise-claim-lock-form select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.enterprise-claim-lock-term-editor {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(11, 17, 31, 0.72);
+  display: grid;
+  gap: 16px;
+}
+
+.enterprise-claim-lock-term-editor__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.enterprise-claim-lock-term-editor__header strong {
+  display: block;
+}
+
+.enterprise-claim-lock-term-editor__header p,
+.enterprise-claim-lock-muted {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+
+.enterprise-claim-lock-term-list {
+  display: grid;
+  gap: 12px;
+}
+
+.enterprise-claim-lock-term-row {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 0.8fr)
+    minmax(240px, 1.4fr)
+    auto
+    auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(9, 14, 28, 0.7);
+}
+
+.enterprise-claim-lock-checkbox {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.enterprise-claim-lock-checkbox input {
+  margin: 0;
+}
+
+.enterprise-claim-lock-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.enterprise-claim-lock-button--danger {
+  border-color: rgba(255, 127, 139, 0.34);
+  color: var(--danger);
+}
+
+.enterprise-claim-lock-button--danger:hover:not(:disabled) {
+  border-color: rgba(255, 127, 139, 0.7);
+}
+
+@media (max-width: 900px) {
+  .enterprise-claim-lock-field-grid,
+  .enterprise-claim-lock-term-row {
+    grid-template-columns: 1fr;
+  }
+
+  .enterprise-claim-lock-term-editor__header {
+    flex-direction: column;
+  }
+
+  .enterprise-claim-lock-checkbox {
+    min-height: 0;
+  }
+}

@@ -17,6 +17,7 @@ import {
 } from "./layout/EnterpriseShell";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import AuditPage from "./pages/AuditPage";
+import ClaimLockPage from "./pages/ClaimLockPage";
 import DashboardPage from "./pages/DashboardPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
@@ -87,6 +88,12 @@ export default function App() {
   } else if (activeRoute === "documents") {
     page = (
       <DocumentsPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "claim-lock") {
+    page = (
+      <ClaimLockPage
         accessContext={accessContext}
       />
     );

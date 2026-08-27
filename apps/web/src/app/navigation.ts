@@ -74,7 +74,7 @@ export const ROUTE_METADATA: Record<
     group: "Governance",
     description:
       "Protected-fact and claim-preservation governance.",
-    availability: "planned"
+    availability: "available"
   },
   audit: {
     label: "Audit",
@@ -185,7 +185,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "claim-lock",
         label: "Claim Lock",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "audit",
