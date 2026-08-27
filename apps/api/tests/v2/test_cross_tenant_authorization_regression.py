@@ -508,3 +508,239 @@ def test_workspace_a_owner_cannot_read_workspace_b_audit_record() -> None:
     )
 
     assert still_loaded_by_b == record
+
+
+@pytest.mark.parametrize(
+    "execution_path",
+    (
+        "single",
+        "multi",
+        "long",
+    ),
+)
+def test_cross_tenant_rewrite_denial_occurs_before_foreign_claim_lock_policy_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    execution_path: str,
+) -> None:
+    from app.domain.models import (
+        DocumentType,
+        RewriteIntensity,
+        RewriteRequest,
+    )
+    from app.v2.domain.claim_lock import (
+        ClaimLockEnforcementMode,
+        ClaimLockOrigin,
+        ClaimLockProvenance,
+        ProtectedTerm,
+    )
+    from app.v2.domain.enterprise_claim_lock_policy import (
+        EnterpriseClaimLockPolicyStatus,
+        EnterpriseWorkspaceClaimLockPolicy,
+    )
+
+    services = _services()
+
+    user_a_id, workspace_a_id = _provision_workspace(
+        services,
+        label=f"I9-A-{execution_path}",
+    )
+
+    owner_b_id, workspace_b_id = _provision_workspace(
+        services,
+        label=f"I9-B-{execution_path}",
+    )
+
+    assert workspace_a_id != workspace_b_id
+
+    policy_id = (
+        f"foreign-policy-{execution_path}-{uuid4().hex}"
+    )
+    term_id = (
+        f"foreign-term-{execution_path}-{uuid4().hex}"
+    )
+    term_text = (
+        f"FOREIGN-CLAIM-LOCK-SECRET-{execution_path}-"
+        f"{uuid4().hex}"
+    )
+
+    revision = 1
+
+    source_reference = (
+        "workspace-claim-lock-policy:"
+        f"{policy_id}:revision:{revision}"
+    )
+
+    timestamp = datetime.now(UTC)
+
+    policy = EnterpriseWorkspaceClaimLockPolicy(
+        policy_id=policy_id,
+        workspace_id=workspace_b_id,
+        status=EnterpriseClaimLockPolicyStatus.ACTIVE,
+        enforcement_mode=ClaimLockEnforcementMode.STRICT,
+        protected_terms=(
+            ProtectedTerm(
+                term_id=term_id,
+                text=term_text,
+                case_sensitive=True,
+                provenance=ClaimLockProvenance(
+                    origin=ClaimLockOrigin.WORKSPACE,
+                    source_reference=source_reference,
+                ),
+            ),
+        ),
+        created_by_user_id=owner_b_id,
+        created_at=timestamp,
+        updated_by_user_id=owner_b_id,
+        updated_at=timestamp,
+        revision=revision,
+    )
+
+    repository = (
+        services.enterprise_claim_lock_policies
+    )
+
+    repository.create(policy)
+
+    original_get_for_workspace = (
+        repository.get_for_workspace
+    )
+
+    before_policy = original_get_for_workspace(
+        workspace_b_id
+    )
+
+    assert before_policy == policy
+
+    policy_lookup_calls: list[str] = []
+
+    def forbidden_foreign_policy_lookup(
+        workspace_id: str,
+    ) -> EnterpriseWorkspaceClaimLockPolicy | None:
+        policy_lookup_calls.append(workspace_id)
+
+        raise AssertionError(
+            "foreign Claim Lock policy repository was "
+            "consulted before rewrite authorization"
+        )
+
+    monkeypatch.setattr(
+        repository,
+        "get_for_workspace",
+        forbidden_foreign_policy_lookup,
+    )
+
+    request = RewriteRequest(
+        text=(
+            "Cross-tenant runtime authorization must "
+            "fail before foreign Claim Lock policy lookup."
+        ),
+        document_type=DocumentType.GENERAL,
+        audience="general audience",
+        tone="natural",
+        intensity=RewriteIntensity.NATURAL_REWRITE,
+        preserve_numbers=True,
+        preserve_dates=True,
+    )
+
+    if execution_path in {
+        "single",
+        "multi",
+    }:
+        before_records = (
+            services.history.list_workspace_history(
+                workspace_id=workspace_b_id,
+                user_id=owner_b_id,
+            )
+        )
+
+        assert before_records == ()
+
+    else:
+        before_audit = (
+            services.long_document_audit.list_workspace(
+                workspace_id=workspace_b_id,
+                user_id=owner_b_id,
+            )
+        )
+
+        assert before_audit == ()
+
+    with pytest.raises(
+        PermissionError,
+        match="membership_not_found",
+    ) as exc_info:
+        if execution_path == "single":
+            services.rewrite.execute(
+                workspace_id=workspace_b_id,
+                user_id=user_a_id,
+                request=request,
+            )
+
+        elif execution_path == "multi":
+            services.multi_candidate.execute(
+                workspace_id=workspace_b_id,
+                user_id=user_a_id,
+                request=request,
+                candidate_count=2,
+            )
+
+        elif execution_path == "long":
+            services.long_document.execute(
+                workspace_id=workspace_b_id,
+                user_id=user_a_id,
+                request=request,
+            )
+
+        else:
+            raise AssertionError(
+                f"unexpected execution path: {execution_path}"
+            )
+
+    assert policy_lookup_calls == []
+
+    denial = str(exc_info.value)
+
+    assert policy_id not in denial
+    assert term_id not in denial
+    assert term_text not in denial
+    assert source_reference not in denial
+
+    assert policy.status.value not in denial.lower()
+    assert (
+        policy.enforcement_mode.value
+        not in denial.lower()
+    )
+    assert (
+        f"revision:{policy.revision}"
+        not in denial
+    )
+
+    after_policy = original_get_for_workspace(
+        workspace_b_id
+    )
+
+    assert after_policy == before_policy
+    assert after_policy == policy
+
+    if execution_path in {
+        "single",
+        "multi",
+    }:
+        after_records = (
+            services.history.list_workspace_history(
+                workspace_id=workspace_b_id,
+                user_id=owner_b_id,
+            )
+        )
+
+        assert after_records == ()
+
+    else:
+        after_audit = (
+            services.long_document_audit.list_workspace(
+                workspace_id=workspace_b_id,
+                user_id=owner_b_id,
+            )
+        )
+
+        assert after_audit == ()
