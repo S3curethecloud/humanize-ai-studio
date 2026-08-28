@@ -1,4 +1,5 @@
 import type {
+  ClaimLock,
   ClaimLockEnforcementMode,
   ClaimLockRewriteEvidence,
   ClaimLockValidationCheck
@@ -7,6 +8,10 @@ import type {
 interface ClaimLockExecutionEvidenceProps {
   evidence:
     ClaimLockRewriteEvidence |
+    null |
+    undefined;
+  effectiveClaimLock:
+    ClaimLock |
     null |
     undefined;
 }
@@ -38,7 +43,8 @@ function checkTone(
 }
 
 export default function ClaimLockExecutionEvidence({
-  evidence
+  evidence,
+  effectiveClaimLock
 }: ClaimLockExecutionEvidenceProps) {
   if (evidence == null) {
     return (
@@ -70,7 +76,7 @@ export default function ClaimLockExecutionEvidence({
   const preparation = evidence.preparation;
   const validation = evidence.validation;
   const effectiveLock =
-    preparation.claim_lock ?? null;
+    effectiveClaimLock ?? null;
   const workspacePolicy =
     evidence.workspace_policy ?? null;
 
@@ -86,7 +92,8 @@ export default function ClaimLockExecutionEvidence({
 
         <p>
           Server-produced preparation, validation,
-          and workspace-policy execution evidence.
+          effective-lock snapshot, and workspace-policy
+          execution evidence.
         </p>
       </div>
 
@@ -187,9 +194,9 @@ export default function ClaimLockExecutionEvidence({
 
           {effectiveLock === null ? (
             <p className="enterprise-claim-lock-execution-muted">
-              The server returned preparation and
-              validation evidence without an effective
-              Claim Lock object for this execution.
+              The server response did not include an
+              authoritative effective Claim Lock snapshot
+              for this execution.
             </p>
           ) : (
             <dl>

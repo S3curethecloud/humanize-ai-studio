@@ -1,4 +1,5 @@
 import type {
+  ClaimLock,
   ClaimLockRequestCustomization,
   ClaimLockRewriteEvidence
 } from "./claimLock";
@@ -37,6 +38,7 @@ export interface LongDocumentAuditRecord {
   audit_id: string;
   workspace_id: string;
   user_id: string;
+  effective_claim_lock?: ClaimLock | null;
   created_at?: string;
 }
 

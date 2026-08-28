@@ -804,6 +804,12 @@ export default function RewriteStudioPage({
                       .response
                       .claim_lock
                   }
+                  effectiveClaimLock={
+                    submittedResult
+                      .response
+                      .history
+                      .claim_lock_snapshot
+                  }
                 />
               </>
             ) : (

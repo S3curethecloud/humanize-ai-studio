@@ -712,6 +712,9 @@ export default function DocumentsPage({
 
           <ClaimLockExecutionEvidence
             evidence={result.claim_lock}
+            effectiveClaimLock={
+              result.audit.effective_claim_lock
+            }
           />
         </>
       )}
