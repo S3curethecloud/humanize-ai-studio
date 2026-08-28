@@ -21,6 +21,7 @@ import ClaimLockPage from "./pages/ClaimLockPage";
 import DashboardPage from "./pages/DashboardPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import ProvidersPage from "./pages/ProvidersPage";
 import QuotasPage from "./pages/QuotasPage";
 import RewriteStudioPage from "./pages/RewriteStudioPage";
 import VoiceDnaPage from "./pages/VoiceDnaPage";
@@ -94,6 +95,12 @@ export default function App() {
   } else if (activeRoute === "claim-lock") {
     page = (
       <ClaimLockPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "providers") {
+    page = (
+      <ProvidersPage
         accessContext={accessContext}
       />
     );

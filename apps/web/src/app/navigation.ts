@@ -94,8 +94,8 @@ export const ROUTE_METADATA: Record<
     label: "Providers",
     group: "Operations",
     description:
-      "Administrative visibility into configured model-provider targets.",
-    availability: "planned"
+      "Read-only visibility into configured model-provider targets.",
+    availability: "available"
   },
   routing: {
     label: "Routing",
@@ -205,7 +205,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "providers",
         label: "Providers",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "routing",
