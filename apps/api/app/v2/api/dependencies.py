@@ -164,6 +164,9 @@ from app.v2.services.workspace_analytics_aggregator import (
 from app.v2.services.workspace_analytics_query_service import (
     WorkspaceAnalyticsQueryService,
 )
+from app.v2.services.workspace_provider_catalog_query_service import (
+    WorkspaceProviderCatalogQueryService,
+)
 from app.v2.services.workspace_rewrite_service import (
     WorkspaceRewriteService,
 )
@@ -344,6 +347,15 @@ class V2Services:
                 resolver=(
                     self.enterprise_authorization
                     .authorization_resolver
+                ),
+            )
+        )
+
+        self.workspace_provider_catalog = (
+            WorkspaceProviderCatalogQueryService(
+                catalog=self.provider_catalog,
+                authorization_gate=(
+                    self.workspace_authorization
                 ),
             )
         )

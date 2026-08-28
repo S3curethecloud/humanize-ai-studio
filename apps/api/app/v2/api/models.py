@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -61,6 +63,9 @@ from app.v2.domain.rewrite_candidates import (
     RewriteCandidateDiffSet,
     RewriteCandidateSet,
 )
+from app.v2.domain.provider_routing import (
+    ProviderCapability,
+)
 from app.v2.domain.routing_eval_evidence import (
     EvaluationEvidenceRecord,
     RoutingEvidenceRecord,
@@ -102,6 +107,37 @@ class WorkspaceHistoryResponse(BaseModel):
     workspace_id: str
     records: tuple[
         RewriteHistoryRecord,
+        ...,
+    ]
+
+
+class ProviderCatalogTargetVisibility(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    target_id: str
+    provider_id: str
+    provider_display_name: str
+    model_id: str
+    capabilities: tuple[
+        ProviderCapability,
+        ...,
+    ]
+    enabled: bool
+
+
+class WorkspaceProviderCatalogVisibilityResponse(
+    BaseModel
+):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    workspace_id: str
+    catalog_scope: Literal["platform"] = "platform"
+    targets: tuple[
+        ProviderCatalogTargetVisibility,
         ...,
     ]
 

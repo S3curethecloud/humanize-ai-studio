@@ -142,6 +142,7 @@ from app.v2.api.models import (
     EvaluationEvidenceListResponse,
     EvaluationEvidenceResponse,
     MultiCandidateRewriteEvidence,
+    ProviderCatalogTargetVisibility,
     RoutingEvidenceListResponse,
     RoutingEvidenceResponse,
     TransferEnterpriseWorkspaceOwnershipRequest,
@@ -152,6 +153,7 @@ from app.v2.api.models import (
     VoiceProfileResponse,
     VoiceRewriteEvidence,
     WorkspaceHistoryResponse,
+    WorkspaceProviderCatalogVisibilityResponse,
     WorkspaceLongDocumentRewriteRequest,
     WorkspaceLongDocumentRewriteResponse,
     WorkspaceRewriteRequest,
@@ -970,6 +972,66 @@ def list_workspace_history(
     return WorkspaceHistoryResponse(
         workspace_id=workspace_id,
         records=records,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/providers",
+    response_model=WorkspaceProviderCatalogVisibilityResponse,
+)
+def list_workspace_provider_catalog(
+    workspace_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+    enabled_only: bool = Query(
+        default=False,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=1000,
+    ),
+) -> WorkspaceProviderCatalogVisibilityResponse:
+    try:
+        targets = (
+            services.workspace_provider_catalog.list_targets(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                enabled_only=enabled_only,
+                limit=limit,
+            )
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    visible_targets = tuple(
+        ProviderCatalogTargetVisibility(
+            target_id=target.target_id,
+            provider_id=target.provider.provider_id,
+            provider_display_name=(
+                target.provider.display_name
+            ),
+            model_id=target.model.model_id,
+            capabilities=tuple(
+                sorted(
+                    target.capabilities.capabilities,
+                    key=lambda capability: capability.value,
+                )
+            ),
+            enabled=target.enabled,
+        )
+        for target in targets
+    )
+
+    return WorkspaceProviderCatalogVisibilityResponse(
+        workspace_id=workspace_id,
+        catalog_scope="platform",
+        targets=visible_targets,
     )
 
 
