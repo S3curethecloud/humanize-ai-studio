@@ -340,7 +340,7 @@ export default function QuotasPage({
 
           <button
             type="button"
-            className="enterprise-secondary-button"
+            className="enterprise-primary-button"
             disabled={busy}
             onClick={() =>
               void handleCreate()

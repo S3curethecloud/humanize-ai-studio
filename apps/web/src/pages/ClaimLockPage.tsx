@@ -42,10 +42,6 @@ EnterpriseClaimLockPolicyTermInput {
 function editableTerms(
   policy: EnterpriseWorkspaceClaimLockPolicy
 ): EnterpriseClaimLockPolicyTermInput[] {
-  if (policy.protected_terms.length === 0) {
-    return [emptyTerm()];
-  }
-
   return policy.protected_terms.map(
     (term) => ({
       term_id: term.term_id,
@@ -156,7 +152,7 @@ export default function ClaimLockPage({
   const [terms, setTerms] =
     useState<
       EnterpriseClaimLockPolicyTermInput[]
-    >([emptyTerm()]);
+    >([]);
 
   const [message, setMessage] =
     useState<string | null>(null);
@@ -198,7 +194,7 @@ export default function ClaimLockPage({
       setPolicy(null);
       setPolicyId("");
       setEnforcementMode("strict");
-      setTerms([emptyTerm()]);
+      setTerms([]);
     },
     []
   );
@@ -978,7 +974,7 @@ export default function ClaimLockPage({
             <div className="enterprise-claim-lock-actions">
               <button
                 type="button"
-                className="enterprise-secondary-button"
+                className="enterprise-primary-button"
                 disabled={busy}
                 onClick={() =>
                   policy === null

@@ -596,7 +596,7 @@ export default function MembersPage({
 
             <button
               type="button"
-              className="enterprise-secondary-button"
+              className="enterprise-primary-button"
               disabled={busy}
               onClick={() =>
                 void handleAddMember()

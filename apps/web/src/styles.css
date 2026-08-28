@@ -871,3 +871,26 @@ select {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
+
+/* UI-H1 Rewrite Studio density hardening */
+
+.workspace--enterprise textarea {
+  min-height: 320px;
+}
+
+.workspace--enterprise .empty-state {
+  min-height: 360px;
+  padding: 36px;
+}
+
+@media (max-width: 760px) {
+  .workspace--enterprise textarea {
+    min-height: 260px;
+  }
+
+  .workspace--enterprise .empty-state {
+    min-height: 300px;
+    padding: 28px 22px;
+  }
+}

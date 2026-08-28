@@ -1339,3 +1339,326 @@
     min-height: 0;
   }
 }
+
+
+/* UI-H1 platform-wide presentation hardening */
+
+.enterprise-secondary-button,
+.enterprise-primary-button {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.enterprise-secondary-button {
+  border: 1px solid var(--enterprise-border-strong);
+  color: inherit;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(22, 32, 53, 0.96),
+      rgba(12, 19, 34, 0.96)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.enterprise-secondary-button:hover:not(:disabled) {
+  border-color: var(--cyan);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(26, 39, 62, 0.98),
+      rgba(14, 23, 40, 0.98)
+    );
+  transform: translateY(-1px);
+}
+
+.enterprise-primary-button {
+  border: 0;
+  color: #061018;
+  background:
+    linear-gradient(
+      110deg,
+      var(--cyan),
+      var(--purple)
+    );
+  box-shadow:
+    0 12px 28px rgba(53, 216, 229, 0.15);
+}
+
+.enterprise-primary-button:hover:not(:disabled) {
+  box-shadow:
+    0 15px 32px rgba(53, 216, 229, 0.2);
+  transform: translateY(-1px);
+}
+
+.enterprise-secondary-button:focus-visible,
+.enterprise-primary-button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.enterprise-secondary-button:disabled,
+.enterprise-primary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.enterprise-placeholder {
+  width: min(1120px, 100%);
+  min-height: 390px;
+  margin: 0 auto;
+  padding:
+    clamp(32px, 5vw, 56px);
+}
+
+.enterprise-placeholder__status {
+  margin-bottom: 24px;
+}
+
+.enterprise-placeholder__boundary {
+  margin-top: 26px;
+}
+
+.enterprise-analytics-operation__header strong,
+.enterprise-dashboard-section
+.enterprise-section__heading h2 {
+  overflow-wrap: anywhere;
+}
+
+.enterprise-analytics-metric strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size:
+    clamp(1rem, 1.4vw, 1.35rem);
+}
+
+.enterprise-claim-lock-execution {
+  gap: 16px;
+}
+
+.enterprise-claim-lock-execution-grid {
+  gap: 12px;
+}
+
+.enterprise-claim-lock-execution-check-list {
+  gap: 8px;
+}
+
+.enterprise-claim-lock-execution-check {
+  padding: 12px;
+}
+
+.enterprise-claim-lock-execution-check > div,
+.enterprise-claim-lock-execution-check footer {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.enterprise-claim-lock-execution-check > div strong,
+.enterprise-claim-lock-execution-check footer span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.enterprise-claim-lock-button--danger:hover:not(:disabled) {
+  background: rgba(255, 127, 139, 0.08);
+}
+
+.enterprise-document-reconstructed-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+
+@media (max-width: 760px) {
+  .enterprise-placeholder {
+    min-height: auto;
+    padding: 28px 22px;
+  }
+
+  .enterprise-claim-lock-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .enterprise-claim-lock-actions
+  .enterprise-secondary-button,
+  .enterprise-claim-lock-actions
+  .enterprise-primary-button {
+    width: 100%;
+  }
+}
+
+
+/* UI-H2R1 active-surface presentation remediation */
+
+/*
+ * The source-workspace container is shared.
+ * Its geometry remains untouched here.
+ * Only standard enterprise text/number controls are normalized.
+ */
+.enterprise-page
+.source-workspace
+input:not([type]),
+.enterprise-page
+.source-workspace
+input[type="text"],
+.enterprise-page
+.source-workspace
+input[type="number"] {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  background: #0a1020;
+  outline: none;
+  font: inherit;
+}
+
+.enterprise-page
+.source-workspace
+input:not([type]):focus,
+.enterprise-page
+.source-workspace
+input[type="text"]:focus,
+.enterprise-page
+.source-workspace
+input[type="number"]:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px var(--cyan-soft);
+}
+
+.enterprise-page
+.source-workspace
+input:not([type]):disabled,
+.enterprise-page
+.source-workspace
+input[type="text"]:disabled,
+.enterprise-page
+.source-workspace
+input[type="number"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/*
+ * Audit history and Voice DNA profile choices reuse
+ * enterprise operation cards as interactive buttons.
+ */
+button.enterprise-analytics-operation {
+  width: 100%;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+button.enterprise-analytics-operation:hover:not(:disabled) {
+  border-color: var(--enterprise-border-strong);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(19, 29, 49, 0.96),
+      rgba(11, 18, 33, 0.96)
+    );
+  transform: translateY(-1px);
+}
+
+button.enterprise-analytics-operation:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* Members & Roles enterprise inventory table. */
+
+.enterprise-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--enterprise-border);
+  border-radius: 14px;
+  background: var(--enterprise-surface);
+}
+
+.enterprise-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  color: var(--text);
+}
+
+.enterprise-table th,
+.enterprise-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--enterprise-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.enterprise-table th {
+  color: var(--enterprise-text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.enterprise-table td {
+  font-size: 0.82rem;
+}
+
+.enterprise-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.enterprise-table td:first-child {
+  min-width: 260px;
+}
+
+.enterprise-table td:first-child strong,
+.enterprise-table td:first-child small {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.enterprise-table td:first-child small {
+  color: var(--enterprise-text-muted);
+}
+
+.enterprise-table td:last-child {
+  min-width: 190px;
+}
+
+.enterprise-table td:last-child
+.enterprise-secondary-button {
+  margin: 0 8px 8px 0;
+}
+
+@media (max-width: 760px) {
+  .enterprise-table th,
+  .enterprise-table td {
+    padding: 12px;
+  }
+}

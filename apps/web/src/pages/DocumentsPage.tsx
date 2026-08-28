@@ -564,7 +564,7 @@ export default function DocumentsPage({
 
           <button
             type="button"
-            className="enterprise-secondary-button"
+            className="enterprise-primary-button"
             disabled={busy}
             onClick={() =>
               void handleRewrite()
@@ -611,13 +611,18 @@ export default function DocumentsPage({
                 {
                   result.reconstruction
                     .section_results.length
-                } sections
+                } {
+                  result.reconstruction
+                    .section_results.length === 1
+                    ? "section"
+                    : "sections"
+                }
               </p>
             </div>
 
             <div className="source-workspace">
               <h3>Reconstructed text</h3>
-              <p>
+              <p className="enterprise-document-reconstructed-text">
                 {
                   result.reconstruction
                     .reconstructed_text

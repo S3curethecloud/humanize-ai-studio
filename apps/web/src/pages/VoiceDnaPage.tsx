@@ -366,7 +366,7 @@ export default function VoiceDnaPage({
 
           <button
             type="button"
-            className="enterprise-secondary-button"
+            className="enterprise-primary-button"
             onClick={() =>
               void handleCreate()
             }
