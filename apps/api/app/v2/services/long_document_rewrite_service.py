@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -10,6 +11,12 @@ from app.v2.domain.claim_lock import (
 )
 from app.v2.domain.enterprise_claim_lock_runtime import (
     EnterpriseClaimLockRuntimeContext,
+)
+from app.v2.domain.enterprise_provider_routing_operation import (
+    EnterpriseProviderRoutingOperationKind,
+)
+from app.v2.domain.provider_routing import (
+    ProviderCapability,
 )
 from app.v2.domain.long_document_audit import (
     LongDocumentAuditRecord,
@@ -35,6 +42,9 @@ from app.v2.services.document_structure_detector import (
 )
 from app.v2.services.enterprise_claim_lock_runtime_service import (
     EnterpriseClaimLockRuntimeService,
+)
+from app.v2.services.enterprise_provider_routing_operation_coordinator import (
+    EnterpriseProviderRoutingOperationCoordinator,
 )
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
@@ -90,6 +100,9 @@ class LongDocumentWorkspaceRewriteService:
         control_evaluator: LongDocumentControlEvaluator,
         reconstructor: DocumentReconstructor,
         audit_service: LongDocumentAuditService,
+        routing_operation_coordinator: (
+            EnterpriseProviderRoutingOperationCoordinator | None
+        ) = None,
         observability: LongDocumentObservability | None = None,
         authorization_gate: WorkspaceAuthorizationGate,
         duration_clock: Callable[[], float] = perf_counter,
@@ -124,6 +137,9 @@ class LongDocumentWorkspaceRewriteService:
         self._control_evaluator = control_evaluator
         self._reconstructor = reconstructor
         self._audit_service = audit_service
+        self._routing_operation_coordinator = (
+            routing_operation_coordinator
+        )
         self._observability = observability
         self._authorization_gate = authorization_gate
         self._duration_clock = duration_clock
@@ -218,35 +234,78 @@ class LongDocumentWorkspaceRewriteService:
                 section_count=len(plan.entries),
             )
 
-        execution = self._orchestrator.execute(
-            request=request,
-            structure=structure,
-            plan=plan,
-        )
-
         if claim_lock_runtime_context is None:
             effective_claim_lock = (
                 claim_lock_preparation.claim_lock
             )
 
-        evaluation = self._control_evaluator.evaluate(
-            execution=execution,
-            claim_lock=effective_claim_lock,
+        routing_capabilities = {
+            ProviderCapability.REWRITE,
+            ProviderCapability.LONG_DOCUMENT,
+        }
+
+        if effective_claim_lock is not None:
+            routing_capabilities.add(
+                ProviderCapability.CLAIM_LOCK
+            )
+
+        routing_operation = (
+            self._routing_operation_coordinator.use_routing_operation(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                operation_kind=(
+                    EnterpriseProviderRoutingOperationKind.LONG_DOCUMENT_REWRITE
+                ),
+                required_capabilities=frozenset(
+                    routing_capabilities
+                ),
+            )
+            if self._routing_operation_coordinator is not None
+            else nullcontext(None)
         )
 
-        reconstruction = self._reconstructor.reconstruct(
-            evaluation=evaluation,
-        )
+        with routing_operation as routing_scope:
+            execution = self._orchestrator.execute(
+                request=request,
+                structure=structure,
+                plan=plan,
+            )
 
-        audit = self._audit_service.record(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            evaluation=evaluation,
-            reconstruction=reconstruction,
-            claim_lock_runtime_context=(
-                claim_lock_runtime_context
-            ),
-        )
+            evaluation = self._control_evaluator.evaluate(
+                execution=execution,
+                claim_lock=effective_claim_lock,
+            )
+
+            reconstruction = self._reconstructor.reconstruct(
+                evaluation=evaluation,
+            )
+
+            audit = self._audit_service.record(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                evaluation=evaluation,
+                reconstruction=reconstruction,
+                claim_lock_runtime_context=(
+                    claim_lock_runtime_context
+                ),
+            )
+
+
+            if routing_scope is not None:
+                coordinator = (
+                    self._routing_operation_coordinator
+                )
+
+                if coordinator is None:
+                    raise RuntimeError(
+                        "long-document routing scope exists "
+                        "without coordinator authority"
+                    )
+
+                coordinator.complete_success(
+                    scope=routing_scope,
+                    long_document_audit_id=audit.audit_id,
+                )
 
         if self._observability is not None:
             duration_ms = max(

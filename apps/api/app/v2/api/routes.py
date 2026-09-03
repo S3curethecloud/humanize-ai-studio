@@ -105,6 +105,10 @@ from app.v2.services.voice_rewrite_guidance import (
     VoiceProfileAnalysisRequiredError,
     VoiceProfileInactiveError,
 )
+from app.v2.services.workspace_provider_routing_execution_evidence_query_service import (
+    WorkspaceProviderRoutingExecutionEvidence,
+    WorkspaceProviderRoutingExecutionEvidenceIntegrityError,
+)
 from app.v2.services.workspace_analytics_query_service import (
     WorkspaceAnalyticsQueryLimitError,
 )
@@ -154,6 +158,9 @@ from app.v2.api.models import (
     VoiceRewriteEvidence,
     WorkspaceHistoryResponse,
     WorkspaceProviderCatalogVisibilityResponse,
+    WorkspaceProviderRoutingEvidenceBindingResponse,
+    WorkspaceProviderRoutingExecutionEvidenceListResponse,
+    WorkspaceProviderRoutingExecutionEvidenceResponse,
     WorkspaceLongDocumentRewriteRequest,
     WorkspaceLongDocumentRewriteResponse,
     WorkspaceRewriteRequest,
@@ -1032,6 +1039,157 @@ def list_workspace_provider_catalog(
         workspace_id=workspace_id,
         catalog_scope="platform",
         targets=visible_targets,
+    )
+
+
+def _workspace_provider_routing_execution_evidence_response(
+    record: WorkspaceProviderRoutingExecutionEvidence,
+) -> WorkspaceProviderRoutingExecutionEvidenceResponse:
+    return WorkspaceProviderRoutingExecutionEvidenceResponse(
+        operation=record.operation,
+        bindings=tuple(
+            WorkspaceProviderRoutingEvidenceBindingResponse(
+                binding=binding_view.binding,
+                routing_evidence=(
+                    binding_view.routing_evidence
+                ),
+            )
+            for binding_view in record.bindings
+        ),
+    )
+
+
+def _workspace_provider_routing_execution_evidence_query():
+    query = (
+        services
+        .workspace_provider_routing_execution_evidence
+    )
+
+    if query is None:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "workspace_routing_execution_"
+                "evidence_integrity_error"
+            ),
+        )
+
+    return query
+
+
+@router.get(
+    "/workspaces/{workspace_id}/routing-executions",
+    response_model=(
+        WorkspaceProviderRoutingExecutionEvidenceListResponse
+    ),
+)
+def list_workspace_provider_routing_executions(
+    workspace_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=100,
+    ),
+) -> WorkspaceProviderRoutingExecutionEvidenceListResponse:
+    query = (
+        _workspace_provider_routing_execution_evidence_query()
+    )
+
+    try:
+        records = query.list_workspace(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            limit=limit,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except (
+        WorkspaceProviderRoutingExecutionEvidenceIntegrityError
+    ) as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "workspace_routing_execution_"
+                "evidence_integrity_error"
+            ),
+        ) from exc
+
+    return (
+        WorkspaceProviderRoutingExecutionEvidenceListResponse(
+            workspace_id=workspace_id,
+            records=tuple(
+                _workspace_provider_routing_execution_evidence_response(
+                    record
+                )
+                for record in records
+            ),
+        )
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/routing-executions/{operation_id}",
+    response_model=(
+        WorkspaceProviderRoutingExecutionEvidenceResponse
+    ),
+)
+def get_workspace_provider_routing_execution(
+    workspace_id: str,
+    operation_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> WorkspaceProviderRoutingExecutionEvidenceResponse:
+    query = (
+        _workspace_provider_routing_execution_evidence_query()
+    )
+
+    try:
+        record = query.get(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            operation_id=operation_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except (
+        WorkspaceProviderRoutingExecutionEvidenceIntegrityError
+    ) as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "workspace_routing_execution_"
+                "evidence_integrity_error"
+            ),
+        ) from exc
+
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="routing_execution_not_found",
+        )
+
+    return (
+        _workspace_provider_routing_execution_evidence_response(
+            record
+        )
     )
 
 

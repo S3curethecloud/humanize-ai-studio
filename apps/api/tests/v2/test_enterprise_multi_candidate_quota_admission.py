@@ -371,6 +371,7 @@ def test_legacy_claim_lock_preparation_occurs_before_quota_admission() -> None:
     preparation_result = MagicMock(
         spec=ClaimLockPreparationResult,
     )
+    preparation_result.claim_lock = None
     preparation.prepare.return_value = preparation_result
 
     admission = MagicMock(

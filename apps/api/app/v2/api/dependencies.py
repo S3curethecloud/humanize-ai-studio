@@ -72,6 +72,24 @@ from app.v2.services.enterprise_claim_lock_runtime_service import (
 from app.v2.services.enterprise_claim_lock_policy_repository_factory import (
     build_enterprise_claim_lock_policy_repository,
 )
+from app.v2.services.enterprise_provider_routing_operation_coordinator import (
+    EnterpriseProviderRoutingOperationCoordinator,
+)
+from app.v2.services.enterprise_provider_routing_operation_repository_factory import (
+    build_enterprise_provider_routing_operation_repository,
+)
+from app.v2.services.enterprise_provider_routing_operation_service import (
+    EnterpriseProviderRoutingOperationService,
+)
+from app.v2.services.enterprise_provider_routing_policy_repository_factory import (
+    build_enterprise_provider_routing_policy_repository,
+)
+from app.v2.services.enterprise_provider_routing_policy_runtime_service import (
+    EnterpriseProviderRoutingPolicyRuntimeService,
+)
+from app.v2.services.enterprise_routing_aware_provider import (
+    EnterpriseRoutingAwareRewriteProvider,
+)
 from app.v2.services.enterprise_long_document_quota_admission_service import (
     EnterpriseLongDocumentQuotaAdmissionService,
 )
@@ -167,6 +185,9 @@ from app.v2.services.workspace_analytics_query_service import (
 from app.v2.services.workspace_provider_catalog_query_service import (
     WorkspaceProviderCatalogQueryService,
 )
+from app.v2.services.workspace_provider_routing_execution_evidence_query_service import (
+    WorkspaceProviderRoutingExecutionEvidenceQueryService,
+)
 from app.v2.services.workspace_rewrite_service import (
     WorkspaceRewriteService,
 )
@@ -219,6 +240,11 @@ class V2Services:
             voice_audit_auth_settings or VoiceAuditAuthenticitySettings.from_environment()
         )
         voice_audit_authenticator = resolved_voice_audit_auth.build_authenticator()
+
+        canonical_enterprise_routing_activation = (
+            workflow is None
+            and voice_aware_provider is None
+        )
 
         repositories = build_repository_bundle(resolved_persistence)
 
@@ -351,6 +377,62 @@ class V2Services:
             )
         )
 
+        self.enterprise_provider_routing_policies = None
+        self.enterprise_provider_routing_operations = None
+        self.enterprise_provider_routing_policy_runtime = None
+        self.enterprise_provider_routing_operation_service = None
+        self.enterprise_routing_aware_provider = None
+        self.enterprise_provider_routing_operation_coordinator = None
+
+        if canonical_enterprise_routing_activation:
+            self.enterprise_provider_routing_policies = (
+                build_enterprise_provider_routing_policy_repository(
+                    resolved_persistence,
+                )
+            )
+
+            self.enterprise_provider_routing_operations = (
+                build_enterprise_provider_routing_operation_repository(
+                    resolved_persistence,
+                )
+            )
+
+            self.enterprise_provider_routing_policy_runtime = (
+                EnterpriseProviderRoutingPolicyRuntimeService(
+                    policies=(
+                        self.enterprise_provider_routing_policies
+                    ),
+                    authorization_gate=(
+                        self.workspace_authorization
+                    ),
+                )
+            )
+
+            self.enterprise_provider_routing_operation_service = (
+                EnterpriseProviderRoutingOperationService(
+                    repository=(
+                        self.enterprise_provider_routing_operations
+                    ),
+                )
+            )
+
+        self.workspace_provider_routing_execution_evidence = None
+
+        if self.enterprise_provider_routing_operations is not None:
+            self.workspace_provider_routing_execution_evidence = (
+                WorkspaceProviderRoutingExecutionEvidenceQueryService(
+                    operations=(
+                        self.enterprise_provider_routing_operations
+                    ),
+                    routing_evidence=(
+                        self.routing_evidence_query
+                    ),
+                    authorization_gate=(
+                        self.workspace_authorization
+                    ),
+                )
+            )
+
         self.workspace_provider_catalog = (
             WorkspaceProviderCatalogQueryService(
                 catalog=self.provider_catalog,
@@ -460,6 +542,56 @@ class V2Services:
                 provider = build_rewrite_provider(
                     resolved_provider_settings
                 )
+
+                if canonical_enterprise_routing_activation:
+                    policy_runtime = (
+                        self.enterprise_provider_routing_policy_runtime
+                    )
+                    operation_service = (
+                        self.enterprise_provider_routing_operation_service
+                    )
+                    operation_repository = (
+                        self.enterprise_provider_routing_operations
+                    )
+
+                    if (
+                        policy_runtime is None
+                        or operation_service is None
+                        or operation_repository is None
+                    ):
+                        raise RuntimeError(
+                            "canonical enterprise provider routing "
+                            "foundation is unavailable"
+                        )
+
+                    routing_aware_provider = (
+                        EnterpriseRoutingAwareRewriteProvider(
+                            legacy_provider=provider,
+                            routing=(
+                                self.provider_routing.routing
+                            ),
+                            catalog=self.provider_catalog,
+                            operations=operation_service,
+                        )
+                    )
+
+                    self.enterprise_routing_aware_provider = (
+                        routing_aware_provider
+                    )
+
+                    self.enterprise_provider_routing_operation_coordinator = (
+                        EnterpriseProviderRoutingOperationCoordinator(
+                            policy_runtime=policy_runtime,
+                            operations=operation_service,
+                            operation_repository=(
+                                operation_repository
+                            ),
+                            provider=routing_aware_provider,
+                        )
+                    )
+
+                    provider = routing_aware_provider
+
                 resolved_voice_provider = VoiceAwareRewriteProvider(
                     provider=provider,
                 )
@@ -572,6 +704,9 @@ class V2Services:
             reconstructor=DocumentReconstructor(),
             audit_service=(self.long_document_audit),
             long_document_quota_admission=(long_document_quota_admission),
+            routing_operation_coordinator=(
+                self.enterprise_provider_routing_operation_coordinator
+            ),
             observability=(self.long_document_observability),
             authorization_gate=self.workspace_authorization,
         )
@@ -582,6 +717,9 @@ class V2Services:
             quota_admission=(single_rewrite_quota_admission),
             enterprise_claim_lock_runtime_service=(
                 self.enterprise_claim_lock_runtime
+            ),
+            routing_operation_coordinator=(
+                self.enterprise_provider_routing_operation_coordinator
             ),
             observability=(self.single_rewrite_observability),
             authorization_gate=self.workspace_authorization,
@@ -597,6 +735,9 @@ class V2Services:
             voice_provider=resolved_voice_provider,
             enterprise_claim_lock_runtime_service=(
                 self.enterprise_claim_lock_runtime
+            ),
+            routing_operation_coordinator=(
+                self.enterprise_provider_routing_operation_coordinator
             ),
             observability=(self.multi_candidate_observability),
             authorization_gate=self.workspace_authorization,

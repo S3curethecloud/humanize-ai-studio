@@ -549,3 +549,94 @@ def test_multi_candidate_rejects_dual_claim_lock_authority() -> None:
                 allow_all_workspace_authorization_gate()
             ),
         )
+
+
+def test_legacy_claim_lock_preparation_is_resolved_once_before_generation() -> None:
+    workspace_service, history_service, workflow = (
+        _services()
+    )
+
+    user = workspace_service.create_user(
+        email="legacy-routing-owner@example.com",
+        display_name="Legacy Routing Owner",
+    )
+
+    workspace = workspace_service.create_workspace(
+        user_id=user.user_id,
+        name="Legacy Routing Workspace",
+    )
+
+    request = _request()
+
+    expected_preparation = (
+        ClaimLockPreparationService().prepare(
+            text=request.text,
+            explicit_terms=(
+                ExplicitProtectedTerm(
+                    text="Project Atlas",
+                    case_sensitive=True,
+                ),
+            ),
+            enforcement_mode=(
+                ClaimLockEnforcementMode.STRICT
+            ),
+        )
+    )
+
+    preparation_service = MagicMock(
+        spec=ClaimLockPreparationService,
+    )
+
+    preparation_service.prepare.return_value = (
+        expected_preparation
+    )
+
+    service = MultiCandidateWorkspaceRewriteService(
+        history_service=history_service,
+        workflow=workflow,
+        claim_lock_preparation_service=(
+            preparation_service
+        ),
+        authorization_gate=(
+            allow_all_workspace_authorization_gate()
+        ),
+    )
+
+    result = service.execute(
+        workspace_id=workspace.workspace_id,
+        user_id=user.user_id,
+        request=request,
+        candidate_count=2,
+        explicit_protected_terms=(
+            ExplicitProtectedTerm(
+                text="Project Atlas",
+                case_sensitive=True,
+            ),
+        ),
+        claim_lock_enforcement_mode=(
+            ClaimLockEnforcementMode.STRICT
+        ),
+    )
+
+    preparation_service.prepare.assert_called_once_with(
+        text=request.text,
+        explicit_terms=(
+            ExplicitProtectedTerm(
+                text="Project Atlas",
+                case_sensitive=True,
+            ),
+        ),
+        enforcement_mode=(
+            ClaimLockEnforcementMode.STRICT
+        ),
+    )
+
+    assert (
+        result.claim_lock_preparation
+        == expected_preparation
+    )
+
+    assert (
+        result.claim_lock_preparation.claim_lock
+        == expected_preparation.claim_lock
+    )

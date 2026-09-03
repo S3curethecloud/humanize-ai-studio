@@ -29,6 +29,10 @@ from app.v2.domain.enterprise_claim_lock_policy import (
 from app.v2.domain.enterprise_claim_lock_runtime import (
     EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
 )
+from app.v2.domain.enterprise_provider_routing_operation import (
+    EnterpriseProviderRoutingEvidenceBinding,
+    EnterpriseWorkspaceProviderRoutingOperation,
+)
 from app.v2.domain.enterprise_quota import (
     EnterpriseQuotaDimension,
     EnterpriseQuotaWindow,
@@ -138,6 +142,45 @@ class WorkspaceProviderCatalogVisibilityResponse(
     catalog_scope: Literal["platform"] = "platform"
     targets: tuple[
         ProviderCatalogTargetVisibility,
+        ...,
+    ]
+
+
+class WorkspaceProviderRoutingEvidenceBindingResponse(
+    BaseModel
+):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    binding: EnterpriseProviderRoutingEvidenceBinding
+    routing_evidence: RoutingEvidenceRecord | None
+
+
+class WorkspaceProviderRoutingExecutionEvidenceResponse(
+    BaseModel
+):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    operation: EnterpriseWorkspaceProviderRoutingOperation
+    bindings: tuple[
+        WorkspaceProviderRoutingEvidenceBindingResponse,
+        ...,
+    ]
+
+
+class WorkspaceProviderRoutingExecutionEvidenceListResponse(
+    BaseModel
+):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    workspace_id: str
+    records: tuple[
+        WorkspaceProviderRoutingExecutionEvidenceResponse,
         ...,
     ]
 

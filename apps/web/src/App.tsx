@@ -22,6 +22,7 @@ import DashboardPage from "./pages/DashboardPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import ProvidersPage from "./pages/ProvidersPage";
+import RoutingPage from "./pages/RoutingPage";
 import QuotasPage from "./pages/QuotasPage";
 import RewriteStudioPage from "./pages/RewriteStudioPage";
 import VoiceDnaPage from "./pages/VoiceDnaPage";
@@ -101,6 +102,12 @@ export default function App() {
   } else if (activeRoute === "providers") {
     page = (
       <ProvidersPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "routing") {
+    page = (
+      <RoutingPage
         accessContext={accessContext}
       />
     );

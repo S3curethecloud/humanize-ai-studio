@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -26,6 +27,12 @@ from app.v2.domain.claim_lock_audit import (
 )
 from app.v2.domain.enterprise_claim_lock_runtime import (
     EnterpriseClaimLockRuntimeContext,
+)
+from app.v2.domain.enterprise_provider_routing_operation import (
+    EnterpriseProviderRoutingOperationKind,
+)
+from app.v2.domain.provider_routing import (
+    ProviderCapability,
 )
 from app.v2.domain.models import (
     RewriteHistoryRecord,
@@ -74,6 +81,9 @@ from app.v2.services.complex_rewrite_observability import (
 )
 from app.v2.services.enterprise_claim_lock_runtime_service import (
     EnterpriseClaimLockRuntimeService,
+)
+from app.v2.services.enterprise_provider_routing_operation_coordinator import (
+    EnterpriseProviderRoutingOperationCoordinator,
 )
 from app.v2.services.enterprise_multi_candidate_quota_admission_service import (
     EnterpriseMultiCandidateQuotaAdmissionService,
@@ -148,6 +158,9 @@ class MultiCandidateWorkspaceRewriteService:
         claim_lock_validator: ClaimLockValidator | None = None,
         ranker: CandidateRanker | None = None,
         audit_builder: CandidateAuditBuilder | None = None,
+        routing_operation_coordinator: (
+            EnterpriseProviderRoutingOperationCoordinator | None
+        ) = None,
         observability: MultiCandidateObservability | None = None,
         authorization_gate: WorkspaceAuthorizationGate,
         duration_clock: Callable[[], float] = perf_counter,
@@ -161,6 +174,9 @@ class MultiCandidateWorkspaceRewriteService:
         self._duration_clock = duration_clock
         self._voice_guidance_service = voice_guidance_service
         self._voice_provider = voice_provider
+        self._routing_operation_coordinator = (
+            routing_operation_coordinator
+        )
 
         if (
             enterprise_claim_lock_runtime_service is not None
@@ -176,6 +192,16 @@ class MultiCandidateWorkspaceRewriteService:
             enterprise_claim_lock_runtime_service
         )
 
+        self._claim_lock_preparation_service = (
+            None
+            if enterprise_claim_lock_runtime_service
+            is not None
+            else (
+                claim_lock_preparation_service
+                or ClaimLockPreparationService()
+            )
+        )
+
         self._planner = planner or CandidateGenerationPlanner()
         self._diff_engine = diff_engine or CandidateDiffEngine()
         self._ranker = ranker or CandidateRanker()
@@ -189,13 +215,7 @@ class MultiCandidateWorkspaceRewriteService:
             ControlledCandidateRewriteOrchestrator(
                 candidate_orchestrator=candidate_orchestrator,
                 claim_lock_preparation_service=(
-                    None
-                    if enterprise_claim_lock_runtime_service
-                    is not None
-                    else (
-                        claim_lock_preparation_service
-                        or ClaimLockPreparationService()
-                    )
+                    self._claim_lock_preparation_service
                 ),
                 claim_lock_validator=(
                     claim_lock_validator or ClaimLockValidator()
@@ -255,90 +275,181 @@ class MultiCandidateWorkspaceRewriteService:
             voice_profile_id=voice_profile_id,
         )
 
-        controlled = self._execute_controlled(
-            workspace_id=workspace_id,
-            request=request,
-            plan=plan,
-            voice_guidance=voice_guidance,
-            claim_lock_runtime_context=(
-                claim_lock_runtime_context
-            ),
-            explicit_protected_terms=(
-                explicit_protected_terms
-            ),
-            claim_lock_enforcement_mode=(
-                claim_lock_enforcement_mode
-            ),
-        )
+        legacy_claim_lock_preparation = None
 
-        diff_set = self._diff_engine.build_diff_set(
-            candidate_set=(controlled.generation.candidate_set),
-        )
-
-        selection = self._ranker.select(
-            controlled_execution=controlled,
-            diff_set=diff_set,
-        )
-
-        if (
-            selection.decision is CandidateSelectionDecision.NONE_ELIGIBLE
-            or selection.selected_candidate_id is None
-        ):
-            raise NoEligibleCandidateError("multi-candidate rewrite produced no eligible candidate")
-
-        audit_snapshot = self._audit_builder.build(
-            controlled_execution=controlled,
-            selection=selection,
-        )
-
-        selected_index = self._selected_index(
-            controlled=controlled,
-            selected_candidate_id=(selection.selected_candidate_id),
-        )
-
-        selected_response = controlled.generation.responses[selected_index]
-
-        selected_control = controlled.controls[selected_index]
-
-        claim_lock = controlled.effective_claim_lock
-
-        selected_claim_lock_validation = selected_control.claim_lock_validation
-
-        claim_lock_validation_audit = (
-            ClaimLockValidationAuditSnapshot.model_validate(
-                selected_claim_lock_validation.model_dump(mode="json")
+        if claim_lock_runtime_context is None:
+            preparation_service = (
+                self._claim_lock_preparation_service
             )
-            if claim_lock is not None
-            else None
+
+            if preparation_service is None:
+                raise RuntimeError(
+                    "multi-candidate legacy Claim Lock "
+                    "preparation authority is unavailable"
+                )
+
+            legacy_enforcement_mode = (
+                claim_lock_enforcement_mode
+                or ClaimLockEnforcementMode.STRICT
+            )
+
+            legacy_claim_lock_preparation = (
+                preparation_service.prepare(
+                    text=request.text,
+                    explicit_terms=(
+                        explicit_protected_terms
+                    ),
+                    enforcement_mode=(
+                        legacy_enforcement_mode
+                    ),
+                )
+            )
+
+        routing_effective_claim_lock = (
+            claim_lock_runtime_context.effective_claim_lock
+            if claim_lock_runtime_context is not None
+            else (
+                legacy_claim_lock_preparation.claim_lock
+                if legacy_claim_lock_preparation is not None
+                else None
+            )
         )
 
-        history = self._history_service.record_rewrite(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            request=request,
-            response=selected_response,
-            voice_profile_id=(voice_guidance.profile_id if voice_guidance is not None else None),
-            voice_guidance_version=(
-                voice_guidance.guidance_version if voice_guidance is not None else None
-            ),
-            voice_analysis_snapshot=(
-                voice_guidance.analysis_snapshot if voice_guidance is not None else None
-            ),
-            claim_lock_snapshot=claim_lock,
-            claim_lock_validation=(claim_lock_validation_audit),
-            claim_lock_enforcement_mode=(
-                controlled.effective_enforcement_mode
+        routing_capabilities = {
+            ProviderCapability.REWRITE,
+            ProviderCapability.MULTI_CANDIDATE,
+        }
+
+        if routing_effective_claim_lock is not None:
+            routing_capabilities.add(
+                ProviderCapability.CLAIM_LOCK
+            )
+
+        if voice_guidance is not None:
+            routing_capabilities.add(
+                ProviderCapability.VOICE_PROFILE
+            )
+
+        routing_operation = (
+            self._routing_operation_coordinator.use_routing_operation(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                operation_kind=(
+                    EnterpriseProviderRoutingOperationKind.MULTI_CANDIDATE_REWRITE
+                ),
+                required_capabilities=frozenset(
+                    routing_capabilities
+                ),
+            )
+            if self._routing_operation_coordinator is not None
+            else nullcontext(None)
+        )
+
+        with routing_operation as routing_scope:
+            controlled = self._execute_controlled(
+                workspace_id=workspace_id,
+                request=request,
+                plan=plan,
+                voice_guidance=voice_guidance,
+                claim_lock_runtime_context=(
+                    claim_lock_runtime_context
+                ),
+                legacy_claim_lock_preparation=(
+                    legacy_claim_lock_preparation
+                ),
+                explicit_protected_terms=(
+                    explicit_protected_terms
+                ),
+                claim_lock_enforcement_mode=(
+                    claim_lock_enforcement_mode
+                ),
+            )
+
+            diff_set = self._diff_engine.build_diff_set(
+                candidate_set=(controlled.generation.candidate_set),
+            )
+
+            selection = self._ranker.select(
+                controlled_execution=controlled,
+                diff_set=diff_set,
+            )
+
+            if (
+                selection.decision is CandidateSelectionDecision.NONE_ELIGIBLE
+                or selection.selected_candidate_id is None
+            ):
+                raise NoEligibleCandidateError("multi-candidate rewrite produced no eligible candidate")
+
+            audit_snapshot = self._audit_builder.build(
+                controlled_execution=controlled,
+                selection=selection,
+            )
+
+            selected_index = self._selected_index(
+                controlled=controlled,
+                selected_candidate_id=(selection.selected_candidate_id),
+            )
+
+            selected_response = controlled.generation.responses[selected_index]
+
+            selected_control = controlled.controls[selected_index]
+
+            claim_lock = controlled.effective_claim_lock
+
+            selected_claim_lock_validation = selected_control.claim_lock_validation
+
+            claim_lock_validation_audit = (
+                ClaimLockValidationAuditSnapshot.model_validate(
+                    selected_claim_lock_validation.model_dump(mode="json")
+                )
                 if claim_lock is not None
                 else None
-            ),
-            claim_lock_workspace_policy=(
-                claim_lock_runtime_context
-                .workspace_policy_evidence
-                if claim_lock_runtime_context is not None
-                else None
-            ),
-            candidate_audit_snapshot=(audit_snapshot),
-        )
+            )
+
+            history = self._history_service.record_rewrite(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                request=request,
+                response=selected_response,
+                voice_profile_id=(voice_guidance.profile_id if voice_guidance is not None else None),
+                voice_guidance_version=(
+                    voice_guidance.guidance_version if voice_guidance is not None else None
+                ),
+                voice_analysis_snapshot=(
+                    voice_guidance.analysis_snapshot if voice_guidance is not None else None
+                ),
+                claim_lock_snapshot=claim_lock,
+                claim_lock_validation=(claim_lock_validation_audit),
+                claim_lock_enforcement_mode=(
+                    controlled.effective_enforcement_mode
+                    if claim_lock is not None
+                    else None
+                ),
+                claim_lock_workspace_policy=(
+                    claim_lock_runtime_context
+                    .workspace_policy_evidence
+                    if claim_lock_runtime_context is not None
+                    else None
+                ),
+                candidate_audit_snapshot=(audit_snapshot),
+            )
+
+
+            if routing_scope is not None:
+                coordinator = (
+                    self._routing_operation_coordinator
+                )
+
+                if coordinator is None:
+                    raise RuntimeError(
+                        "multi-candidate routing scope exists "
+                        "without coordinator authority"
+                    )
+
+                coordinator.complete_success(
+                    scope=routing_scope,
+                    rewrite_history_id=history.rewrite_id,
+                )
 
         if self._observability is not None:
             duration_ms = max(
@@ -410,6 +521,9 @@ class MultiCandidateWorkspaceRewriteService:
         claim_lock_runtime_context: (
             EnterpriseClaimLockRuntimeContext | None
         ),
+        legacy_claim_lock_preparation: (
+            ClaimLockPreparationResult | None
+        ),
         explicit_protected_terms: tuple[
             ExplicitProtectedTerm,
             ...,
@@ -442,6 +556,12 @@ class MultiCandidateWorkspaceRewriteService:
         def execute_controlled(
         ) -> ControlledCandidateGenerationExecution:
             if claim_lock_runtime_context is not None:
+                if legacy_claim_lock_preparation is not None:
+                    raise RuntimeError(
+                        "enterprise multi-candidate Claim Lock "
+                        "cannot also use legacy preparation"
+                    )
+
                 return self._controlled_orchestrator.execute(
                     request=request,
                     plan=plan,
@@ -460,17 +580,30 @@ class MultiCandidateWorkspaceRewriteService:
                     pre_generation_hook=pre_generation_hook,
                 )
 
+            if legacy_claim_lock_preparation is None:
+                raise RuntimeError(
+                    "multi-candidate legacy Claim Lock "
+                    "preparation was not resolved"
+                )
+
             return self._controlled_orchestrator.execute(
                 request=request,
                 plan=plan,
-                explicit_protected_terms=(
-                    explicit_protected_terms
-                ),
                 claim_lock_enforcement_mode=(
+                    legacy_enforcement_mode
+                ),
+                pre_resolved_claim_lock_preparation=(
+                    legacy_claim_lock_preparation
+                ),
+                effective_claim_lock=(
+                    legacy_claim_lock_preparation.claim_lock
+                ),
+                effective_enforcement_mode=(
                     legacy_enforcement_mode
                 ),
                 pre_generation_hook=pre_generation_hook,
             )
+
 
         if voice_guidance is None:
             return execute_controlled()

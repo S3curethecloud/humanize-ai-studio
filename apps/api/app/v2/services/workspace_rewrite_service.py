@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from time import perf_counter
 
 from app.domain.models import (
@@ -16,6 +17,12 @@ from app.v2.domain.claim_lock_audit import (
 )
 from app.v2.domain.enterprise_claim_lock_runtime import (
     EnterpriseClaimLockRuntimeContext,
+)
+from app.v2.domain.enterprise_provider_routing_operation import (
+    EnterpriseProviderRoutingOperationKind,
+)
+from app.v2.domain.provider_routing import (
+    ProviderCapability,
 )
 from app.v2.domain.models import (
     RewriteHistoryRecord,
@@ -36,6 +43,9 @@ from app.v2.services.claim_lock_validator import (
 )
 from app.v2.services.enterprise_claim_lock_runtime_service import (
     EnterpriseClaimLockRuntimeService,
+)
+from app.v2.services.enterprise_provider_routing_operation_coordinator import (
+    EnterpriseProviderRoutingOperationCoordinator,
 )
 from app.v2.services.enterprise_single_rewrite_quota_admission_service import (
     EnterpriseSingleRewriteQuotaAdmissionService,
@@ -90,6 +100,9 @@ class WorkspaceRewriteService:
         ) = None,
         claim_lock_preparation_service: (ClaimLockPreparationService | None) = None,
         claim_lock_validator: (ClaimLockValidator | None) = None,
+        routing_operation_coordinator: (
+            EnterpriseProviderRoutingOperationCoordinator | None
+        ) = None,
         observability: SingleRewriteObservability | None = None,
         authorization_gate: WorkspaceAuthorizationGate,
         duration_clock: Callable[[], float] = perf_counter,
@@ -97,6 +110,9 @@ class WorkspaceRewriteService:
         self._history_service = history_service
         self._workflow = workflow
         self._quota_admission = quota_admission
+        self._routing_operation_coordinator = (
+            routing_operation_coordinator
+        )
         self._observability = observability
         self._authorization_gate = authorization_gate
         self._duration_clock = duration_clock
@@ -209,51 +225,98 @@ class WorkspaceRewriteService:
                 request=request,
             )
 
-        response = self._workflow.execute(request)
+        routing_capabilities = {
+            ProviderCapability.REWRITE,
+        }
 
-        claim_lock_validation = self._claim_lock_validator.validate(
-            claim_lock=effective_claim_lock,
-            rewritten_text=(response.rewritten_text),
-        )
-
-        if (
-            response.verification.decision is not ReleaseDecision.FAIL
-            and effective_enforcement_mode
-            is ClaimLockEnforcementMode.STRICT
-            and claim_lock_validation.decision is ClaimLockValidationDecision.VIOLATION
-        ):
-            raise ClaimLockViolationError(claim_lock_validation)
-
-        claim_lock_validation_audit = (
-            ClaimLockValidationAuditSnapshot.model_validate(
-                claim_lock_validation.model_dump(mode="json")
+        if effective_claim_lock is not None:
+            routing_capabilities.add(
+                ProviderCapability.CLAIM_LOCK
             )
-            if effective_claim_lock is not None
-            else None
+
+        if voice_profile_id is not None:
+            routing_capabilities.add(
+                ProviderCapability.VOICE_PROFILE
+            )
+
+        routing_operation = (
+            self._routing_operation_coordinator.use_routing_operation(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                operation_kind=(
+                    EnterpriseProviderRoutingOperationKind.SINGLE_REWRITE
+                ),
+                required_capabilities=frozenset(
+                    routing_capabilities
+                ),
+            )
+            if self._routing_operation_coordinator is not None
+            else nullcontext(None)
         )
 
-        history = self._history_service.record_rewrite(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            request=request,
-            response=response,
-            voice_profile_id=voice_profile_id,
-            voice_guidance_version=voice_guidance_version,
-            voice_analysis_snapshot=voice_analysis_snapshot,
-            claim_lock_snapshot=effective_claim_lock,
-            claim_lock_validation=(claim_lock_validation_audit),
-            claim_lock_enforcement_mode=(
-                effective_enforcement_mode
+        with routing_operation as routing_scope:
+            response = self._workflow.execute(request)
+
+            claim_lock_validation = self._claim_lock_validator.validate(
+                claim_lock=effective_claim_lock,
+                rewritten_text=(response.rewritten_text),
+            )
+
+            if (
+                response.verification.decision is not ReleaseDecision.FAIL
+                and effective_enforcement_mode
+                is ClaimLockEnforcementMode.STRICT
+                and claim_lock_validation.decision is ClaimLockValidationDecision.VIOLATION
+            ):
+                raise ClaimLockViolationError(claim_lock_validation)
+
+            claim_lock_validation_audit = (
+                ClaimLockValidationAuditSnapshot.model_validate(
+                    claim_lock_validation.model_dump(mode="json")
+                )
                 if effective_claim_lock is not None
                 else None
-            ),
-            claim_lock_workspace_policy=(
-                claim_lock_runtime_context
-                .workspace_policy_evidence
-                if claim_lock_runtime_context is not None
-                else None
-            ),
-        )
+            )
+
+            history = self._history_service.record_rewrite(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                request=request,
+                response=response,
+                voice_profile_id=voice_profile_id,
+                voice_guidance_version=voice_guidance_version,
+                voice_analysis_snapshot=voice_analysis_snapshot,
+                claim_lock_snapshot=effective_claim_lock,
+                claim_lock_validation=(claim_lock_validation_audit),
+                claim_lock_enforcement_mode=(
+                    effective_enforcement_mode
+                    if effective_claim_lock is not None
+                    else None
+                ),
+                claim_lock_workspace_policy=(
+                    claim_lock_runtime_context
+                    .workspace_policy_evidence
+                    if claim_lock_runtime_context is not None
+                    else None
+                ),
+            )
+
+
+            if routing_scope is not None:
+                coordinator = (
+                    self._routing_operation_coordinator
+                )
+
+                if coordinator is None:
+                    raise RuntimeError(
+                        "single rewrite routing scope exists "
+                        "without coordinator authority"
+                    )
+
+                coordinator.complete_success(
+                    scope=routing_scope,
+                    rewrite_history_id=history.rewrite_id,
+                )
 
         if self._observability is not None:
             duration_ms = max(

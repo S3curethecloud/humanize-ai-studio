@@ -101,8 +101,8 @@ export const ROUTE_METADATA: Record<
     label: "Routing",
     group: "Operations",
     description:
-      "Governed provider-routing policy and execution evidence.",
-    availability: "planned"
+      "Read-only workspace provider-routing execution evidence.",
+    availability: "available"
   },
   analytics: {
     label: "Analytics",
@@ -210,7 +210,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "routing",
         label: "Routing",
-        availability: "planned"
+        availability: "available"
       },
       {
         route: "analytics",

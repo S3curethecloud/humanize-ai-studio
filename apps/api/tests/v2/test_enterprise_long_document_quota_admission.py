@@ -212,6 +212,7 @@ def _long_service(
     claim_lock_preparation.prepare.return_value = MagicMock(
         spec=ClaimLockPreparationResult,
     )
+    claim_lock_preparation.prepare.return_value.claim_lock = None
 
     structure = MagicMock()
     detector.detect.return_value = structure
