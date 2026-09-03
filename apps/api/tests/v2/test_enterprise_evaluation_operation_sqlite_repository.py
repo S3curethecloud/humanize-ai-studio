@@ -933,3 +933,205 @@ def test_sqlite_update_pre_read_row_payload_mismatch_fails_closed(
             candidate,
             expected_revision=1,
         )
+
+def test_sqlite_binding_lookup_derives_from_authoritative_payload_across_restart(
+    tmp_path,
+) -> None:
+    database_path = (
+        tmp_path
+        / "evaluation-operation.sqlite3"
+    )
+
+    service, _, _ = _service(
+        database_path=database_path,
+    )
+
+    _start(
+        service
+    )
+
+    reserved = service.reserve_run_evidence(
+        operation_id="operation-1",
+    )
+
+    reopened = (
+        SQLiteEnterpriseWorkspaceEvaluationOperationRepository(
+            database_path=database_path,
+        )
+    )
+
+    assert (
+        reopened.find_by_binding_for_workspace(
+            workspace_id="workspace-1",
+            binding_id="binding-run",
+        )
+        == reserved
+    )
+
+    assert (
+        reopened.find_by_binding_for_workspace(
+            workspace_id="workspace-2",
+            binding_id="binding-run",
+        )
+        is None
+    )
+
+
+def test_sqlite_binding_lookup_rejects_duplicate_workspace_binding_id(
+    tmp_path,
+) -> None:
+    database_path = (
+        tmp_path
+        / "evaluation-operation.sqlite3"
+    )
+
+    service_a, _, _ = _service(
+        database_path=database_path,
+        operation_id="operation-a",
+    )
+
+    _start(
+        service_a
+    )
+
+    service_a.reserve_run_evidence(
+        operation_id="operation-a",
+    )
+
+    service_b, _, _ = _service(
+        database_path=database_path,
+        operation_id="operation-b",
+    )
+
+    _start(
+        service_b
+    )
+
+    service_b.reserve_run_evidence(
+        operation_id="operation-b",
+    )
+
+    reopened = (
+        SQLiteEnterpriseWorkspaceEvaluationOperationRepository(
+            database_path=database_path,
+        )
+    )
+
+    with pytest.raises(
+        EnterpriseEvaluationOperationIntegrityError,
+        match="not unique within workspace",
+    ):
+        reopened.find_by_binding_for_workspace(
+            workspace_id="workspace-1",
+            binding_id="binding-run",
+        )
+
+
+def test_sqlite_binding_lookup_reuses_row_payload_integrity(
+    tmp_path,
+) -> None:
+    database_path = (
+        tmp_path
+        / "evaluation-operation.sqlite3"
+    )
+
+    service, _, _ = _service(
+        database_path=database_path,
+    )
+
+    _start(
+        service
+    )
+
+    service.reserve_run_evidence(
+        operation_id="operation-1",
+    )
+
+    with sqlite3.connect(
+        database_path
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE enterprise_workspace_evaluation_operations
+            SET actor_user_id = ?
+            WHERE operation_id = ?
+            """,
+            (
+                "tampered-actor",
+                "operation-1",
+            ),
+        )
+
+    reopened = (
+        SQLiteEnterpriseWorkspaceEvaluationOperationRepository(
+            database_path=database_path,
+        )
+    )
+
+    with pytest.raises(
+        EnterpriseEvaluationOperationIntegrityError,
+        match="actor_user_id",
+    ):
+        reopened.find_by_binding_for_workspace(
+            workspace_id="workspace-1",
+            binding_id="binding-run",
+        )
+
+def test_sqlite_binding_lookup_isolated_from_foreign_workspace_corruption(
+    tmp_path,
+) -> None:
+    database_path = (
+        tmp_path
+        / "evaluation-operation.sqlite3"
+    )
+
+    service, repository, _ = _service(
+        database_path=database_path,
+    )
+
+    _start(
+        service
+    )
+
+    expected = service.reserve_run_evidence(
+        operation_id="operation-1",
+    )
+
+    repository.create(
+        _new_operation(
+            operation_id="operation-foreign",
+            workspace_id="workspace-2",
+            created_at=(
+                NOW + timedelta(seconds=10)
+            ),
+        )
+    )
+
+    with sqlite3.connect(
+        database_path
+    ) as connection:
+        connection.execute(
+            """
+            UPDATE enterprise_workspace_evaluation_operations
+            SET actor_user_id = ?
+            WHERE operation_id = ?
+            """,
+            (
+                "tampered-foreign-actor",
+                "operation-foreign",
+            ),
+        )
+
+    reopened = (
+        SQLiteEnterpriseWorkspaceEvaluationOperationRepository(
+            database_path=database_path,
+        )
+    )
+
+    assert (
+        reopened.find_by_binding_for_workspace(
+            workspace_id="workspace-1",
+            binding_id="binding-run",
+        )
+        == expected
+    )

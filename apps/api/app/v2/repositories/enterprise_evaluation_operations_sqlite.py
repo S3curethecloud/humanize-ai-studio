@@ -12,7 +12,9 @@ from app.v2.repositories.enterprise_evaluation_operations import (
     EnterpriseEvaluationOperationIntegrityError,
     EnterpriseEvaluationOperationNotFoundError,
     EnterpriseEvaluationOperationRevisionConflictError,
+    _require_binding_lookup_key,
     _require_creatable_operation,
+    _single_binding_lookup_match,
     _validate_update_candidate,
 )
 
@@ -164,6 +166,69 @@ class SQLiteEnterpriseWorkspaceEvaluationOperationRepository:
                 row
             )
             for row in rows
+        )
+
+
+    def find_by_binding_for_workspace(
+        self,
+        *,
+        workspace_id: str,
+        binding_id: str,
+    ) -> EnterpriseWorkspaceEvaluationOperation | None:
+        _require_binding_lookup_key(
+            workspace_id=workspace_id,
+            binding_id=binding_id,
+        )
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    operation_id,
+                    workspace_id,
+                    actor_user_id,
+                    run_id,
+                    dataset_id,
+                    dataset_version,
+                    target_id,
+                    status,
+                    revision,
+                    created_at,
+                    updated_at,
+                    payload
+                FROM enterprise_workspace_evaluation_operations
+                WHERE workspace_id = ?
+                ORDER BY operation_id ASC
+                """,
+                (
+                    workspace_id,
+                ),
+            ).fetchall()
+
+        operations = tuple(
+            _operation_from_row(
+                row
+            )
+            for row in rows
+        )
+
+        matches = tuple(
+            operation
+            for operation in operations
+            if (
+                operation.workspace_id == workspace_id
+                and any(
+                    binding.binding_id == binding_id
+                    for binding
+                    in operation.evidence_bindings
+                )
+            )
+        )
+
+        return _single_binding_lookup_match(
+            workspace_id=workspace_id,
+            binding_id=binding_id,
+            matches=matches,
         )
 
     def update(

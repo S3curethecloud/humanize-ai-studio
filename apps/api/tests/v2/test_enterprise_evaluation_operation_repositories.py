@@ -405,3 +405,124 @@ def test_repository_rejects_terminal_operation_update() -> None:
             candidate,
             expected_revision=2,
         )
+
+def _operation_with_reserved_binding(
+    repository: InMemoryEnterpriseWorkspaceEvaluationOperationRepository,
+    *,
+    operation_id: str,
+    workspace_id: str,
+    binding_id: str,
+) -> EnterpriseWorkspaceEvaluationOperation:
+    run_id = f"run-{operation_id}"
+
+    original = repository.create(
+        _operation(
+            operation_id=operation_id,
+            workspace_id=workspace_id,
+            run_id=run_id,
+        )
+    )
+
+    binding = EnterpriseWorkspaceEvaluationEvidenceBinding(
+        binding_id=binding_id,
+        operation_id=operation_id,
+        workspace_id=workspace_id,
+        evidence_id=f"evidence-{operation_id}",
+        evidence_kind=(
+            EnterpriseEvaluationEvidenceKind.RUN
+        ),
+        run_id=run_id,
+        status=(
+            EnterpriseEvaluationEvidenceBindingStatus.RESERVED
+        ),
+        created_at=(
+            NOW + timedelta(seconds=1)
+        ),
+    )
+
+    candidate = _replace(
+        original,
+        evidence_bindings=(
+            binding,
+        ),
+        updated_at=(
+            NOW + timedelta(seconds=1)
+        ),
+        revision=2,
+    )
+
+    return repository.update(
+        candidate,
+        expected_revision=1,
+    )
+
+
+def test_repository_finds_binding_within_workspace() -> None:
+    repository = (
+        InMemoryEnterpriseWorkspaceEvaluationOperationRepository()
+    )
+
+    expected = _operation_with_reserved_binding(
+        repository,
+        operation_id="operation-a",
+        workspace_id="workspace-1",
+        binding_id="binding-a",
+    )
+
+    assert (
+        repository.find_by_binding_for_workspace(
+            workspace_id="workspace-1",
+            binding_id="binding-a",
+        )
+        == expected
+    )
+
+
+def test_repository_binding_lookup_is_workspace_scoped() -> None:
+    repository = (
+        InMemoryEnterpriseWorkspaceEvaluationOperationRepository()
+    )
+
+    _operation_with_reserved_binding(
+        repository,
+        operation_id="operation-a",
+        workspace_id="workspace-1",
+        binding_id="binding-a",
+    )
+
+    assert (
+        repository.find_by_binding_for_workspace(
+            workspace_id="workspace-2",
+            binding_id="binding-a",
+        )
+        is None
+    )
+
+
+def test_repository_rejects_duplicate_binding_id_within_workspace() -> None:
+    repository = (
+        InMemoryEnterpriseWorkspaceEvaluationOperationRepository()
+    )
+
+    _operation_with_reserved_binding(
+        repository,
+        operation_id="operation-a",
+        workspace_id="workspace-1",
+        binding_id="binding-shared",
+    )
+
+    _operation_with_reserved_binding(
+        repository,
+        operation_id="operation-b",
+        workspace_id="workspace-1",
+        binding_id="binding-shared",
+    )
+
+    with pytest.raises(
+        EnterpriseEvaluationOperationIntegrityError,
+        match="not unique within workspace",
+    ):
+        repository.find_by_binding_for_workspace(
+            workspace_id="workspace-1",
+            binding_id="binding-shared",
+        )
