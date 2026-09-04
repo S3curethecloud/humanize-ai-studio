@@ -63,6 +63,14 @@ class EnterpriseWorkspaceEvaluationOperationRepository(
         ...,
     ]: ...
 
+
+    def find_by_binding_for_workspace(
+        self,
+        *,
+        workspace_id: str,
+        binding_id: str,
+    ) -> EnterpriseWorkspaceEvaluationOperation | None: ...
+
     def update(
         self,
         operation: EnterpriseWorkspaceEvaluationOperation,
@@ -165,6 +173,38 @@ class InMemoryEnterpriseWorkspaceEvaluationOperationRepository:
             ordered[:limit]
         )
 
+
+    def find_by_binding_for_workspace(
+        self,
+        *,
+        workspace_id: str,
+        binding_id: str,
+    ) -> EnterpriseWorkspaceEvaluationOperation | None:
+        _require_binding_lookup_key(
+            workspace_id=workspace_id,
+            binding_id=binding_id,
+        )
+
+        with self._lock:
+            matches = tuple(
+                operation
+                for operation in self._operations.values()
+                if (
+                    operation.workspace_id == workspace_id
+                    and any(
+                        binding.binding_id == binding_id
+                        for binding
+                        in operation.evidence_bindings
+                    )
+                )
+            )
+
+        return _single_binding_lookup_match(
+            workspace_id=workspace_id,
+            binding_id=binding_id,
+            matches=matches,
+        )
+
     def update(
         self,
         operation: EnterpriseWorkspaceEvaluationOperation,
@@ -200,6 +240,48 @@ class InMemoryEnterpriseWorkspaceEvaluationOperationRepository:
             self._operations = candidate_operations
 
         return operation
+
+
+
+def _require_binding_lookup_key(
+    *,
+    workspace_id: str,
+    binding_id: str,
+) -> None:
+    for field_name, value in (
+        ("workspace_id", workspace_id),
+        ("binding_id", binding_id),
+    ):
+        if (
+            not value
+            or value != value.strip()
+        ):
+            raise ValueError(
+                "enterprise evaluation evidence binding lookup "
+                f"{field_name} must be normalized"
+            )
+
+
+def _single_binding_lookup_match(
+    *,
+    workspace_id: str,
+    binding_id: str,
+    matches: tuple[
+        EnterpriseWorkspaceEvaluationOperation,
+        ...,
+    ],
+) -> EnterpriseWorkspaceEvaluationOperation | None:
+    if len(matches) > 1:
+        raise EnterpriseEvaluationOperationIntegrityError(
+            "enterprise evaluation evidence binding identity "
+            "is not unique within workspace: "
+            f"{workspace_id}/{binding_id}"
+        )
+
+    if not matches:
+        return None
+
+    return matches[0]
 
 
 def _require_creatable_operation(
