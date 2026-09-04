@@ -72,6 +72,9 @@ from app.v2.services.enterprise_claim_lock_runtime_service import (
 from app.v2.services.enterprise_claim_lock_policy_repository_factory import (
     build_enterprise_claim_lock_policy_repository,
 )
+from app.v2.services.enterprise_evaluation_operation_repository_factory import (
+    build_enterprise_evaluation_operation_repository,
+)
 from app.v2.services.enterprise_provider_routing_operation_coordinator import (
     EnterpriseProviderRoutingOperationCoordinator,
 )
@@ -199,6 +202,9 @@ from app.v2.services.canonical_workspace_provisioning_service import (
 )
 from app.v2.services.workspace_authorization_gate import (
     WorkspaceAuthorizationGate,
+)
+from app.v2.services.workspace_evaluation_evidence_query_service import (
+    WorkspaceEvaluationEvidenceQueryService,
 )
 from app.v2.services.workspace_service import (
     WorkspaceService,
@@ -373,6 +379,25 @@ class V2Services:
                 resolver=(
                     self.enterprise_authorization
                     .authorization_resolver
+                ),
+            )
+        )
+
+        self.enterprise_evaluation_operations = (
+            build_enterprise_evaluation_operation_repository(
+                resolved_persistence,
+            )
+        )
+        self.workspace_evaluation_evidence = (
+            WorkspaceEvaluationEvidenceQueryService(
+                operations=(
+                    self.enterprise_evaluation_operations
+                ),
+                evaluation_evidence=(
+                    self.evaluation_evidence_query
+                ),
+                authorization_gate=(
+                    self.workspace_authorization
                 ),
             )
         )
