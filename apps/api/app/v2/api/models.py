@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import (
@@ -29,6 +30,10 @@ from app.v2.domain.enterprise_claim_lock_policy import (
 from app.v2.domain.enterprise_claim_lock_runtime import (
     EnterpriseClaimLockWorkspacePolicyExecutionEvidence,
 )
+from app.v2.domain.enterprise_evaluation_operation import (
+    EnterpriseEvaluationEvidenceKind,
+    EnterpriseEvaluationOperationStatus,
+)
 from app.v2.domain.enterprise_provider_routing_operation import (
     EnterpriseProviderRoutingEvidenceBinding,
     EnterpriseWorkspaceProviderRoutingOperation,
@@ -46,6 +51,10 @@ from app.v2.domain.enterprise_workspace import (
     EnterpriseWorkspace,
     EnterpriseWorkspaceMembership,
     EnterpriseWorkspaceRole,
+)
+from app.v2.domain.eval_ops import (
+    EvaluationGateResult,
+    EvaluationRunRecord,
 )
 from app.v2.domain.long_document_audit import (
     LongDocumentAuditRecord,
@@ -181,6 +190,34 @@ class WorkspaceProviderRoutingExecutionEvidenceListResponse(
     workspace_id: str
     records: tuple[
         WorkspaceProviderRoutingExecutionEvidenceResponse,
+        ...,
+    ]
+
+
+class WorkspaceEvaluationEvidenceResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    binding_id: str
+    operation_id: str
+    workspace_id: str
+    operation_status: EnterpriseEvaluationOperationStatus
+    evidence_kind: EnterpriseEvaluationEvidenceKind
+    run: EvaluationRunRecord
+    gate_result: EvaluationGateResult | None
+    recorded_at: datetime
+    observed_at: datetime
+
+
+class WorkspaceEvaluationEvidenceListResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    workspace_id: str
+    records: tuple[
+        WorkspaceEvaluationEvidenceResponse,
         ...,
     ]
 

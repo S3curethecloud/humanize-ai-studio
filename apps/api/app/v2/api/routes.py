@@ -105,6 +105,10 @@ from app.v2.services.voice_rewrite_guidance import (
     VoiceProfileAnalysisRequiredError,
     VoiceProfileInactiveError,
 )
+from app.v2.services.workspace_evaluation_evidence_query_service import (
+    WorkspaceEvaluationEvidenceIntegrityError,
+    WorkspaceEvaluationEvidenceProjection,
+)
 from app.v2.services.workspace_provider_routing_execution_evidence_query_service import (
     WorkspaceProviderRoutingExecutionEvidence,
     WorkspaceProviderRoutingExecutionEvidenceIntegrityError,
@@ -156,6 +160,8 @@ from app.v2.api.models import (
     VoiceProfileListResponse,
     VoiceProfileResponse,
     VoiceRewriteEvidence,
+    WorkspaceEvaluationEvidenceListResponse,
+    WorkspaceEvaluationEvidenceResponse,
     WorkspaceHistoryResponse,
     WorkspaceProviderCatalogVisibilityResponse,
     WorkspaceProviderRoutingEvidenceBindingResponse,
@@ -1039,6 +1045,124 @@ def list_workspace_provider_catalog(
         workspace_id=workspace_id,
         catalog_scope="platform",
         targets=visible_targets,
+    )
+
+
+def _workspace_evaluation_evidence_response(
+    record: WorkspaceEvaluationEvidenceProjection,
+) -> WorkspaceEvaluationEvidenceResponse:
+    return WorkspaceEvaluationEvidenceResponse(
+        binding_id=record.binding_id,
+        operation_id=record.operation_id,
+        workspace_id=record.workspace_id,
+        operation_status=record.operation_status,
+        evidence_kind=record.evidence_kind,
+        run=record.run,
+        gate_result=record.gate_result,
+        recorded_at=record.recorded_at,
+        observed_at=record.observed_at,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/evaluation-evidence",
+    response_model=WorkspaceEvaluationEvidenceListResponse,
+)
+def list_workspace_evaluation_evidence(
+    workspace_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=100,
+    ),
+) -> WorkspaceEvaluationEvidenceListResponse:
+    try:
+        records = (
+            services.workspace_evaluation_evidence
+            .list_workspace(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                operation_limit=limit,
+            )
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except WorkspaceEvaluationEvidenceIntegrityError as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "workspace_evaluation_evidence_"
+                "integrity_error"
+            ),
+        ) from exc
+
+    return WorkspaceEvaluationEvidenceListResponse(
+        workspace_id=workspace_id,
+        records=tuple(
+            _workspace_evaluation_evidence_response(
+                record
+            )
+            for record in records
+        ),
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/evaluation-evidence/{binding_id}",
+    response_model=WorkspaceEvaluationEvidenceResponse,
+)
+def get_workspace_evaluation_evidence(
+    workspace_id: str,
+    binding_id: str,
+    user_id: str = Query(
+        min_length=1,
+        max_length=200,
+    ),
+) -> WorkspaceEvaluationEvidenceResponse:
+    try:
+        record = (
+            services.workspace_evaluation_evidence
+            .get(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                binding_id=binding_id,
+            )
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except WorkspaceEvaluationEvidenceIntegrityError as exc:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=(
+                "workspace_evaluation_evidence_"
+                "integrity_error"
+            ),
+        ) from exc
+
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "workspace_evaluation_evidence_not_found"
+            ),
+        )
+
+    return _workspace_evaluation_evidence_response(
+        record
     )
 
 
