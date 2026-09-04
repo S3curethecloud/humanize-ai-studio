@@ -20,6 +20,7 @@ import AuditPage from "./pages/AuditPage";
 import ClaimLockPage from "./pages/ClaimLockPage";
 import DashboardPage from "./pages/DashboardPage";
 import DocumentsPage from "./pages/DocumentsPage";
+import EvalOpsPage from "./pages/EvalOpsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import ProvidersPage from "./pages/ProvidersPage";
 import RoutingPage from "./pages/RoutingPage";
@@ -120,6 +121,12 @@ export default function App() {
   } else if (activeRoute === "audit") {
     page = (
       <AuditPage
+        accessContext={accessContext}
+      />
+    );
+  } else if (activeRoute === "evalops") {
+    page = (
+      <EvalOpsPage
         accessContext={accessContext}
       />
     );

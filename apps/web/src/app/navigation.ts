@@ -88,7 +88,7 @@ export const ROUTE_METADATA: Record<
     group: "Governance",
     description:
       "Evaluation datasets, runs, evidence, and quality-gate operations.",
-    availability: "planned"
+    availability: "available"
   },
   providers: {
     label: "Providers",
@@ -195,7 +195,7 @@ export const NAVIGATION_GROUPS: NavigationGroup[] = [
       {
         route: "evalops",
         label: "EvalOps",
-        availability: "planned"
+        availability: "available"
       }
     ]
   },
