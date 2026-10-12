@@ -1,0 +1,1281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nexus:ndeb:schema:1.0.0",
+  "title": "NEXUS Delivery Evidence Bundle (NDEB) v1",
+  "description": "Canonical public NDEB schema-definition contract. Cross-item ordering, identity uniqueness, referential closure, temporal comparison, NFC normalization, and future digest equality are normative semantics documented in NDEB_SCHEMA_V1_SEMANTICS.md and are not implemented as a runtime validator by this slice.",
+  "type": "object",
+  "properties": {
+    "schema_id": {
+      "type": "string",
+      "const": "urn:nexus:ndeb"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "bundle_id": {
+      "type": "string",
+      "pattern": "^ndeb:sha256:[0-9a-f]{64}$"
+    },
+    "tenant_id": {
+      "$ref": "#/$defs/IdentifierString"
+    },
+    "engagement_id": {
+      "$ref": "#/$defs/IdentifierString"
+    },
+    "approved_snapshot": {
+      "$ref": "#/$defs/ApprovedSnapshot"
+    },
+    "classification": {
+      "$ref": "#/$defs/Classification"
+    },
+    "evidence_manifest": {
+      "type": "array",
+      "minItems": 0,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/EvidenceManifestEntry"
+      },
+      "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+    },
+    "evidence": {
+      "$ref": "#/$defs/EvidenceFamilies"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 0,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/ArtifactIdentity"
+      },
+      "$comment": "Normative order key and duplicate key: artifact_id after NFC normalization."
+    },
+    "provenance": {
+      "type": "array",
+      "minItems": 0,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/ProvenanceEntry"
+      },
+      "$comment": "Normative order key and duplicate key: provenance_id after NFC normalization."
+    },
+    "approvals": {
+      "type": "array",
+      "minItems": 0,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/ApprovalReference"
+      },
+      "$comment": "Normative order key and duplicate key: approval_id after NFC normalization."
+    },
+    "required_extensions": {
+      "type": "array",
+      "minItems": 0,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/ExtensionName"
+      },
+      "$comment": "Normative order key and duplicate key: extension name after NFC normalization."
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/ExtensionName"
+      },
+      "additionalProperties": {
+        "type": "object"
+      },
+      "$comment": "Every required_extensions name resolves to an exact key in this object by normative semantics. Extension payloads are non-null JSON objects."
+    },
+    "integrity": {
+      "$ref": "#/$defs/Integrity"
+    }
+  },
+  "required": [
+    "schema_id",
+    "schema_version",
+    "bundle_id",
+    "tenant_id",
+    "engagement_id",
+    "approved_snapshot",
+    "classification",
+    "evidence_manifest",
+    "evidence",
+    "artifacts",
+    "provenance",
+    "approvals",
+    "required_extensions",
+    "extensions",
+    "integrity"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "IdentifierString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "TokenString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "NarrativeString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "TimestampUTC": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "Sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "NonNegativeInt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "PositiveInt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ExtensionName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+      "$comment": "Lexical v1 form for <reverse-dns-namespace>/<extension-name>."
+    },
+    "SourceReference": {
+      "type": "object",
+      "properties": {
+        "object_type": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "object_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "object_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "relation": {
+          "$ref": "#/$defs/TokenString"
+        }
+      },
+      "required": [
+        "object_type",
+        "object_id",
+        "object_version"
+      ],
+      "additionalProperties": false
+    },
+    "RevisionReference": {
+      "type": "object",
+      "properties": {
+        "authority": {
+          "type": "string",
+          "const": "nexus"
+        },
+        "revision_type": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "revision_id": {
+          "$ref": "#/$defs/IdentifierString"
+        }
+      },
+      "required": [
+        "authority",
+        "revision_type",
+        "revision_id"
+      ],
+      "additionalProperties": false
+    },
+    "SubjectReference": {
+      "type": "object",
+      "properties": {
+        "subject_type": {
+          "type": "string",
+          "enum": [
+            "evidence",
+            "artifact",
+            "approval",
+            "approved_snapshot"
+          ]
+        },
+        "subject_id": {
+          "$ref": "#/$defs/IdentifierString"
+        }
+      },
+      "required": [
+        "subject_type",
+        "subject_id"
+      ],
+      "additionalProperties": false
+    },
+    "Classification": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "authority_ref": {
+          "$ref": "#/$defs/SourceReference"
+        }
+      },
+      "required": [
+        "value",
+        "authority_ref"
+      ],
+      "additionalProperties": false,
+      "$comment": "Missing, ambiguous, unsupported-required, or downgraded classification fails closed by normative semantics."
+    },
+    "ApprovedSnapshot": {
+      "type": "object",
+      "properties": {
+        "snapshot_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "source_state_revision": {
+          "$ref": "#/$defs/RevisionReference"
+        },
+        "captured_at": {
+          "$ref": "#/$defs/TimestampUTC"
+        },
+        "approved_at": {
+          "$ref": "#/$defs/TimestampUTC"
+        },
+        "approval_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: approval_id string after NFC normalization."
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "source_state_revision",
+        "captured_at",
+        "approved_at",
+        "approval_refs"
+      ],
+      "additionalProperties": false,
+      "$comment": "Normative semantic rule captured_at <= approved_at; each approval_refs value resolves to exactly one approvals[].approval_id."
+    },
+    "ArchitectureDecisionMaterial": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "decision": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "rationale": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "status": {
+          "$ref": "#/$defs/TokenString"
+        }
+      },
+      "required": [
+        "title",
+        "decision",
+        "rationale",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "ArchitectureDecisionsEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "architecture_decision"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/ArchitectureDecisionMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "AgentCatalogMaterial": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "authority_class": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "lifecycle_status": {
+          "$ref": "#/$defs/TokenString"
+        }
+      },
+      "required": [
+        "name",
+        "purpose",
+        "authority_class",
+        "lifecycle_status"
+      ],
+      "additionalProperties": false
+    },
+    "AgentCatalogEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "agent_catalog_entry"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/AgentCatalogMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "ToolCatalogMaterial": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "authority_class": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "lifecycle_status": {
+          "$ref": "#/$defs/TokenString"
+        }
+      },
+      "required": [
+        "name",
+        "purpose",
+        "authority_class",
+        "lifecycle_status"
+      ],
+      "additionalProperties": false
+    },
+    "ToolCatalogEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "tool_catalog_entry"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/ToolCatalogMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "ModelInventoryMaterial": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "model_name": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "lifecycle_status": {
+          "$ref": "#/$defs/TokenString"
+        }
+      },
+      "required": [
+        "provider",
+        "model_name",
+        "purpose",
+        "lifecycle_status"
+      ],
+      "additionalProperties": false
+    },
+    "ModelInventoryEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "model_inventory_entry"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/ModelInventoryMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "SecurityControlMaterial": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "objective": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "implementation_summary": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "control_status": {
+          "$ref": "#/$defs/TokenString"
+        }
+      },
+      "required": [
+        "title",
+        "objective",
+        "implementation_summary",
+        "control_status"
+      ],
+      "additionalProperties": false
+    },
+    "SecurityControlsEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "security_control"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/SecurityControlMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "EvaluationMaterial": {
+      "type": "object",
+      "properties": {
+        "evaluation_type": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "subject_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "result_summary": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "measured_at": {
+          "$ref": "#/$defs/TimestampUTC"
+        }
+      },
+      "required": [
+        "evaluation_type",
+        "subject_ref",
+        "result_summary",
+        "measured_at"
+      ],
+      "additionalProperties": false
+    },
+    "EvaluationsEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "evaluation"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/EvaluationMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "DeploymentEvidenceMaterial": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "deployment_status": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "deployed_at": {
+          "$ref": "#/$defs/TimestampUTC"
+        },
+        "release_ref": {
+          "$ref": "#/$defs/SourceReference"
+        }
+      },
+      "required": [
+        "environment",
+        "deployment_status",
+        "deployed_at",
+        "release_ref"
+      ],
+      "additionalProperties": false
+    },
+    "DeploymentEvidenceEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "deployment_evidence"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/DeploymentEvidenceMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "OperationalArtifactMaterial": {
+      "type": "object",
+      "properties": {
+        "purpose": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "observation_summary": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/TimestampUTC"
+        },
+        "primary_artifact_ref": {
+          "$ref": "#/$defs/IdentifierString"
+        }
+      },
+      "required": [
+        "purpose",
+        "observation_summary",
+        "observed_at",
+        "primary_artifact_ref"
+      ],
+      "additionalProperties": false,
+      "$comment": "Operational artifact primary_artifact_ref must resolve to exactly one artifacts[].artifact_id and appear in the owning EvidenceItem.artifact_refs."
+    },
+    "OperationalArtifactsEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "operational_artifact"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/OperationalArtifactMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "RiskMaterial": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "risk_statement": {
+          "$ref": "#/$defs/NarrativeString"
+        },
+        "severity": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "status": {
+          "$ref": "#/$defs/TokenString"
+        }
+      },
+      "required": [
+        "title",
+        "risk_statement",
+        "severity",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "RisksEvidenceItem": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_type": {
+          "type": "string",
+          "const": "risk"
+        },
+        "record_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "record_version": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        },
+        "material": {
+          "$ref": "#/$defs/RiskMaterial"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "record_type",
+        "record_id",
+        "record_version",
+        "source_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs",
+        "material"
+      ],
+      "additionalProperties": false,
+      "$comment": "evidence_id is globally unique across all nine evidence families by normative semantics."
+    },
+    "EvidenceManifestEntry": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "evidence_family": {
+          "type": "string",
+          "enum": [
+            "architecture_decisions",
+            "agent_catalog",
+            "tool_catalog",
+            "model_inventory",
+            "security_controls",
+            "evaluations",
+            "deployment_evidence",
+            "operational_artifacts",
+            "risks"
+          ]
+        },
+        "record_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification"
+        },
+        "provenance_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: provenance_id string after NFC normalization."
+        },
+        "artifact_refs": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/IdentifierString"
+          },
+          "$comment": "Normative order key and duplicate key: artifact_id string after NFC normalization."
+        }
+      },
+      "required": [
+        "evidence_id",
+        "evidence_family",
+        "record_ref",
+        "classification",
+        "provenance_refs",
+        "artifact_refs"
+      ],
+      "additionalProperties": false,
+      "$comment": "Normative one-to-one join: evidence_id resolves to exactly one evidence item; family, record_ref, classification, provenance_refs, and artifact_refs equal the joined item."
+    },
+    "ArtifactIdentity": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "artifact_type": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "media_type": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "size_bytes": {
+          "$ref": "#/$defs/NonNegativeInt"
+        },
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "artifact_id",
+        "artifact_type",
+        "media_type",
+        "sha256",
+        "size_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "ProvenanceEntry": {
+      "type": "object",
+      "properties": {
+        "provenance_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "subject_ref": {
+          "$ref": "#/$defs/SubjectReference"
+        },
+        "source_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "$comment": "Normative order and duplicate tuple: (object_type, object_id, object_version, relation-or-empty) after NFC normalization."
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/TimestampUTC"
+        }
+      },
+      "required": [
+        "provenance_id",
+        "subject_ref",
+        "source_refs",
+        "recorded_at"
+      ],
+      "additionalProperties": false,
+      "$comment": "subject_ref resolves in-bundle according to subject_type by normative semantics."
+    },
+    "ApprovalReference": {
+      "type": "object",
+      "properties": {
+        "approval_id": {
+          "$ref": "#/$defs/IdentifierString"
+        },
+        "approval_type": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "state": {
+          "$ref": "#/$defs/TokenString"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/SourceReference"
+        },
+        "approved_at": {
+          "$ref": "#/$defs/TimestampUTC"
+        }
+      },
+      "required": [
+        "approval_id",
+        "approval_type",
+        "state",
+        "source_ref"
+      ],
+      "additionalProperties": false
+    },
+    "Integrity": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "sha-256"
+        },
+        "canonicalization": {
+          "type": "string",
+          "const": "RFC8785+NFC"
+        },
+        "identity_material_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "content_digest_sha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        }
+      },
+      "required": [
+        "algorithm",
+        "canonicalization",
+        "identity_material_version",
+        "content_digest_sha256"
+      ],
+      "additionalProperties": false,
+      "$comment": "Schema-definition only. Future identity material excludes exactly bundle_id and integrity.content_digest_sha256; hashing execution is separately governed."
+    },
+    "EvidenceFamilies": {
+      "type": "object",
+      "properties": {
+        "architecture_decisions": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ArchitectureDecisionsEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "agent_catalog": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/AgentCatalogEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "tool_catalog": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ToolCatalogEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "model_inventory": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ModelInventoryEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "security_controls": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SecurityControlsEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "evaluations": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/EvaluationsEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "deployment_evidence": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/DeploymentEvidenceEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "operational_artifacts": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OperationalArtifactsEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        },
+        "risks": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/RisksEvidenceItem"
+          },
+          "$comment": "Normative order key and duplicate key: evidence_id after NFC normalization."
+        }
+      },
+      "required": [
+        "architecture_decisions",
+        "agent_catalog",
+        "tool_catalog",
+        "model_inventory",
+        "security_controls",
+        "evaluations",
+        "deployment_evidence",
+        "operational_artifacts",
+        "risks"
+      ],
+      "additionalProperties": false,
+      "$comment": "All nine arrays are required even when empty. Evidence IDs are globally unique across families."
+    }
+  },
+  "$comment": "Global normative null policy is PROHIBITED. Required zero-cardinality collections remain present. Optional absent fields are omitted. Duplicate JSON keys, semantic identity duplicates, dangling references, unsupported required extensions, ambiguous classification, and non-canonical ordering fail closed by normative semantics."
+}
