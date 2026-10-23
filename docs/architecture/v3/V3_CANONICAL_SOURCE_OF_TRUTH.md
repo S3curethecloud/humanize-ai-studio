@@ -29,11 +29,11 @@ The canonical roadmap identifies the next phase as:
 
 ```text
 CURRENT_PHASE=V3.8
-CURRENT_PHASE_NAME=DOCX_AND_PDF_DELIVERY
-CURRENT_PHASE_STATE=BASE_ARCHITECTURE_ACCEPTED_ROADMAP_AMENDMENT_CANDIDATE_PUBLISHED_PENDING_INDEPENDENT_ACCEPTANCE
+CURRENT_PHASE_NAME=DOCX_PDF_PPTX_RENDERING_FOUNDATION
+CURRENT_PHASE_STATE=ROADMAP_AND_ARCHITECTURE_AMENDMENT_CANONICALLY_ACCEPTED_IMPLEMENTATION_READINESS_PENDING
 ```
 
-V3.8 currently retains its accepted DOCX/PDF architecture while an additive V3.8/V3.9 amendment candidate is pending independent acceptance. The proposed overlay would add deterministic PPTX rendering to V3.8 and retain executive presentation composition and delivery in V3.9 without rewriting historical roadmap or base-architecture bytes.
+V3.8 retains its accepted DOCX/PDF base architecture and now incorporates the independently accepted additive V3.8/V3.9 amendment. The effective overlay adds deterministic PPTX rendering to V3.8 and retains executive presentation composition and delivery in V3.9 without rewriting historical roadmap or base-architecture bytes.
 
 ## V3.8 architecture candidate package
 
@@ -107,9 +107,9 @@ client released
 
 V3.8 planning must preserve this separation.
 
-## V3.8 / V3.9 PPTX roadmap-and-architecture amendment candidate
+## V3.8 / V3.9 PPTX roadmap-and-architecture amendment
 
-The additive amendment candidate contains four new overlay architecture documents:
+The independently accepted additive amendment contains four overlay architecture documents:
 
 ```text
 docs/architecture/v3/V3_8_V3_9_DOCX_PDF_PPTX_ROADMAP_AND_ARCHITECTURE_AMENDMENT.md
@@ -128,7 +128,7 @@ V3_8_V3_9_AMENDMENT_BOUNDARY_SHA256=e32190e08cbfd85206120c4ea02e1c5e81fec62fcd34
 V3_8_V3_9_AMENDMENT_SCOPE_SURFACE_SHA256=c725620d5d83eaae8089c3e9dc2564d21497ee9b2c98b6a09041aed50352ee97
 ```
 
-Candidate file identities:
+Accepted overlay file identities:
 
 1. docs/architecture/v3/V3_8_V3_9_DOCX_PDF_PPTX_ROADMAP_AND_ARCHITECTURE_AMENDMENT.md
    - SHA256=f30fa6a315064f923cb6b4bfb493e76d91166a132dd0cb66f7d26098d39eed43
@@ -153,23 +153,34 @@ Candidate file identities:
 
 The overlay is additive. Historical V3 roadmap documents and the five accepted base V3.8 architecture documents retain their accepted bytes and Git identities.
 
-## Proposed effective phase boundary pending amendment acceptance
+## Effective phase boundary
 
 ```text
-PROPOSED_V3_8_EFFECTIVE_PHASE_NAME=DOCX_PDF_PPTX_RENDERING_FOUNDATION
-PROPOSED_V3_9_EFFECTIVE_PHASE_NAME=EXECUTIVE_PRESENTATION_COMPOSITION_AND_DELIVERY
-PROPOSED_V3_8_PPTX_SCOPE=DETERMINISTIC_PPTX_RENDERING_PRIMITIVE
-PROPOSED_V3_9_SCOPE=EXECUTIVE_PRESENTATION_COMPOSITION_AUDIENCE_ADAPTATION_STORYLINE_SPEAKER_NOTES_DESIGN_INTENT_AND_PRESENTATION_PACKAGE_DELIVERY
+V3_8_EFFECTIVE_PHASE_NAME=DOCX_PDF_PPTX_RENDERING_FOUNDATION
+V3_9_EFFECTIVE_PHASE_NAME=EXECUTIVE_PRESENTATION_COMPOSITION_AND_DELIVERY
+V3_8_PPTX_SCOPE=DETERMINISTIC_PPTX_RENDERING_PRIMITIVE
+V3_9_SCOPE=EXECUTIVE_PRESENTATION_COMPOSITION_AUDIENCE_ADAPTATION_STORYLINE_SPEAKER_NOTES_DESIGN_INTENT_AND_PRESENTATION_PACKAGE_DELIVERY
 ```
 
-The proposed boundary is not effective architecture until the amendment candidate receives independent acceptance and later publication acceptance as required by the Humanize gate discipline.
+This boundary is effective canonical architecture following independent local acceptance, reconciled remote-publication acceptance, and canonical SoT state advancement. It grants no implementation, validation, rendering, export, or client-release authority.
 
-## Amendment candidate state and authority
+## Amendment canonical state and authority
 
 ```text
-V3_8_DOCX_PDF_IMPLEMENTATION_READINESS=ARCHITECTURALLY_QUALIFIED_PENDING_SEPARATE_IMPLEMENTATION_AUTHORITY
-V3_8_V3_9_AMENDMENT_STATE=ACTIVE_CANDIDATE
-V3_8_V3_9_AMENDMENT_ACCEPTANCE=NOT_YET_ESTABLISHED
+V3_8_DOCX_PDF_IMPLEMENTATION_READINESS=ARCHITECTURALLY_QUALIFIED_PRESERVED
+V3_8_DOCX_PDF_PPTX_IMPLEMENTATION_READINESS=PENDING_SEPARATE_IMPLEMENTATION_READINESS_REVIEW
+V3_8_V3_9_AMENDMENT_STATE=CANONICAL_ACCEPTED
+V3_8_V3_9_AMENDMENT_ACCEPTANCE=ESTABLISHED
+V3_8_V3_9_AMENDMENT_PUBLICATION_ACCEPTANCE=ESTABLISHED
+CANONICAL_AMENDMENT_PUBLICATION=ESTABLISHED
+V3_8_V3_9_AMENDMENT_PUBLICATION_COMMIT=4181f46a36eb46f84f4d016b9d55b82e791fa6d6
+V3_8_V3_9_AMENDMENT_PUBLICATION_TREE=438d1e3d0955cc6435c1ac1abfeecc1118d5157b
+V3_8_V3_9_AMENDMENT_PUBLICATION_PARENT=d51bb409c127fb91f3f2aa648ac87aa7fb79f37d
+V3_8_V3_9_AMENDMENT_REMOTE_MAIN_SHA=4181f46a36eb46f84f4d016b9d55b82e791fa6d6
+V3_8_V3_9_AMENDMENT_REMOTE_OUTCOME_ACCEPTANCE_SURFACE_SHA256=26206ba0fe06fc88b04d30ae419395bcc335aab57b6791ec3ee3d355161af800
+V3_8_V3_9_AMENDMENT_POSTCONSUMPTION_RECONCILIATION_SURFACE_SHA256=40e06d05b93ca3fe51b8581ac68acd2179029b075d69d2e3615ce27938e1516c
+V3_8_V3_9_AMENDMENT_ORIGINAL_PUSH_R1_DISPOSITION=NONPASS_POSTCONSUMPTION_PRESERVED_IMMUTABLE
+V3_8_V3_9_AMENDMENT_ORIGINAL_PUSH_R1_RETROACTIVE_PASS=FALSE
 V3_8_V3_9_AMENDMENT_PUBLICATION_AUTHORITY=NONE
 V3_8_IMPLEMENTATION_AUTHORITY=NONE
 V3_8_VALIDATION_AUTHORITY=NONE
@@ -188,7 +199,7 @@ No authority exists to implement renderer code, install PPTX dependencies, gener
 ## Next gate
 
 ```text
-NEXT_GATE=HUMANIZE_V3_8_V3_9_DOCX_PDF_PPTX_ROADMAP_AND_ARCHITECTURE_AMENDMENT_EXACT_5_PATH_DETACHED_CANDIDATE_INDEPENDENT_READ_ONLY_ACCEPTANCE_REVIEW_R1
+NEXT_GATE=HUMANIZE_V3_8_DOCX_PDF_PPTX_RENDERING_FOUNDATION_IMPLEMENTATION_READINESS_SCOPE_AND_AUTHORIZATION_READ_ONLY_REVIEW_R1
 NEXT_GATE_AUTHORITY=OWNER_SEPARATE_APPROVAL_REQUIRED
 STOP=YES
 ```
